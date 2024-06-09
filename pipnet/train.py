@@ -2,8 +2,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
+from torch.cuda.amp import autocast, GradScaler
 
-from affine_ops import (
+from pipnet.affine_ops import (
     affine,
     get_rotation_mtrx,
     get_zeros_mask,
@@ -49,11 +50,8 @@ def train_step_plain(
         criterion=criterion,
         train_iter=train_iter,
         print=True,
-        EPS=1e-8,
+        EPS=1e-7,
     )
-
-    # Compute the gradient
-    loss.backward()
     return loss, acc
 
 
@@ -117,11 +115,8 @@ def train_step_rot_inv(
         criterion=criterion,
         train_iter=train_iter,
         print=True,
-        EPS=1e-8,
+        EPS=1e-7,
     )
-
-    # Compute the gradient
-    loss.backward()
     return loss, acc
 
 
@@ -140,23 +135,25 @@ def train_step_rot_match(
     Performs PIP-Net train step
     with rotation and matching.
     """
-    # Randomly draw angles;
-    batch_size = targets.shape[0]
-    angles = draw_angles(batch_size)
+    with torch.no_grad():
+        # Randomly draw angles;
+        batch_size = targets.shape[0]
+        angles = draw_angles(batch_size)
 
-    # Get rotation matrix;
-    t_mtrx = get_rotation_mtrx(angles)
+        # Get rotation matrix;
+        t_mtrx = get_rotation_mtrx(angles)
 
-    # Get identity and transformed tensor;
-    x_i = x1
-    x_t = affine(x2, t_mtrx, padding_mode="reflection")
+        # Get identity and transformed tensor;
+        x_i = x1
+        x_t = affine(x2, t_mtrx, padding_mode="reflection")
 
     # Forward pass;
     proto_features, pooled, logits = network(torch.cat([x_i, x_t]))
 
-    # Generate coordinates match matrix;
-    z_i, _ = proto_features.chunk(2)
-    match_mtrx = get_affine_match_mask(t_mtrx, z_i.shape)
+    with torch.no_grad():
+        # Generate coordinates match matrix;
+        z_i, _ = proto_features.chunk(2)
+        match_mtrx = get_affine_match_mask(t_mtrx, z_i.shape)
 
     # Calculate loss and metrics;
     norm_mul = network.module._classification.normalization_multiplier
@@ -175,11 +172,8 @@ def train_step_rot_match(
         criterion=criterion,
         train_iter=train_iter,
         print=True,
-        EPS=1e-8,
+        EPS=1e-7,
     )
-
-    # Compute the gradient
-    loss.backward()
     return loss, acc
 
 
@@ -199,8 +193,13 @@ def train_pipnet(
     mode: str = "PLAIN",
     progress_prefix: str = 'Train Epoch',
 ):
+    # Initialize gradient scaler for AMP
+    scaler = GradScaler()
+
     # Make sure the model is in train mode
     net.train()
+
+    print(f"Training mode: {mode}")
 
     if pretrain:
         # Disable training of classification layer
@@ -263,55 +262,62 @@ def train_pipnet(
         optimizer_net.zero_grad(set_to_none=True)
 
         # Perform a train step
-        if mode == "MATCH":
-            loss, acc = train_step_rot_match(
-                network=net,
-                x1=x1,
-                x2=x2,
-                targets=y,
-                loss_weights=loss_weights,
-                pretrain=pretrain,
-                finetune=finetune,
-                criterion=criterion,
-                train_iter=train_iter,
-            )
-        elif mode == "INV":
-            loss, acc = train_step_rot_inv(
-                network=net,
-                x1=x1,
-                x2=x2,
-                targets=y,
-                loss_weights=loss_weights,
-                pretrain=pretrain,
-                finetune=finetune,
-                criterion=criterion,
-                train_iter=train_iter,
-            )
-        else:
-            loss, acc = train_step_plain(
-                network=net,
-                x1=x1,
-                x2=x2,
-                targets=y,
-                loss_weights=loss_weights,
-                pretrain=pretrain,
-                finetune=finetune,
-                criterion=criterion,
-                train_iter=train_iter,
-            )
+        with autocast():
+            if mode == "MATCH":
+                loss, acc = train_step_rot_match(
+                    network=net,
+                    x1=x1,
+                    x2=x2,
+                    targets=y,
+                    loss_weights=loss_weights,
+                    pretrain=pretrain,
+                    finetune=finetune,
+                    criterion=criterion,
+                    train_iter=train_iter,
+                )
+            elif mode == "INV":
+                loss, acc = train_step_rot_inv(
+                    network=net,
+                    x1=x1,
+                    x2=x2,
+                    targets=y,
+                    loss_weights=loss_weights,
+                    pretrain=pretrain,
+                    finetune=finetune,
+                    criterion=criterion,
+                    train_iter=train_iter,
+                )
+            else:
+                loss, acc = train_step_plain(
+                    network=net,
+                    x1=x1,
+                    x2=x2,
+                    targets=y,
+                    loss_weights=loss_weights,
+                    pretrain=pretrain,
+                    finetune=finetune,
+                    criterion=criterion,
+                    train_iter=train_iter,
+                )
+
+        # Compute the gradient
+        scaler.scale(loss).backward()
 
         # Optimize
         if not pretrain:
-            optimizer_classifier.step()
+            scaler.step(optimizer_classifier)
             scheduler_classifier.step(epoch - 1 + (i / iters))
             lrs_class.append(scheduler_classifier.get_last_lr()[0])
 
         if not finetune:
-            optimizer_net.step()
+            scaler.step(optimizer_net)
             scheduler_net.step()
             lrs_net.append(scheduler_net.get_last_lr()[0])
         else:
             lrs_net.append(0.)
+
+        # Update gradient scaler
+        scaler.update()
 
         with torch.no_grad():
             total_acc += acc.item()
@@ -348,7 +354,7 @@ def calculate_loss(
     criterion: Callable,
     train_iter,
     print: bool = True,
-    EPS: float = 1e-10,
+    EPS: float = 1e-7,
 ):
     a_loss_w = loss_weights["a_loss_w"]
     t_loss_w = loss_weights["t_loss_w"]
@@ -405,7 +411,7 @@ def align_loss(
     z2: torch.Tensor,
     mask: Optional[torch.Tensor],
     mode: str = "PLAIN",
-    EPS: float = 1e-12,
+    EPS: float = 1e-7,
 ):
     assert z1.shape == z2.shape
     assert z2.requires_grad is False
@@ -449,7 +455,7 @@ def align_loss(
     return loss
 
 
-def tanh_loss(inputs: torch.Tensor, EPS: float = 1e-8):
+def tanh_loss(inputs: torch.Tensor, EPS: float = 1e-7):
     loss = torch.tanh(torch.sum(inputs, dim=0))
     loss = -torch.log(loss + EPS).mean()
     return loss
