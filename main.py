@@ -157,7 +157,22 @@ def run_pipnet(args=None):
         print("\nPretrain Epoch", epoch, "with batch size", trainloader_pretraining.batch_size, flush=True)
         
         # Pretrain prototypes
-        train_info = train_pipnet(net, trainloader_pretraining, optimizer_net, optimizer_classifier, scheduler_net, None, criterion, epoch, args.epochs_pretrain, device, pretrain=True, finetune=False)
+        train_info = train_pipnet(
+            net=net,
+            train_loader=trainloader_pretraining,
+            optimizer_net=optimizer_net,
+            optimizer_classifier=optimizer_classifier,
+            scheduler_net=scheduler_net,
+            scheduler_classifier=None,
+            criterion=criterion,
+            epoch=epoch,
+            nr_epochs=args.epochs_pretrain,
+            device=device,
+            pretrain=True,
+            finetune=False,
+            mode=args.train_mode,
+        )
+
         lrs_pretrain_net+=train_info['lrs_net']
         plt.clf()
         plt.plot(lrs_pretrain_net)
@@ -239,7 +254,22 @@ def run_pipnet(args=None):
                     print("Classifier bias: ", net.module._classification.bias, flush=True)
                 torch.set_printoptions(profile="default")
 
-        train_info = train_pipnet(net, trainloader, optimizer_net, optimizer_classifier, scheduler_net, scheduler_classifier, criterion, epoch, args.epochs, device, pretrain=False, finetune=finetune)
+        train_info = train_pipnet(
+            net=net,
+            train_loader=trainloader,
+            optimizer_net=optimizer_net,
+            optimizer_classifier=optimizer_classifier,
+            scheduler_net=scheduler_net,
+            scheduler_classifier=scheduler_classifier,
+            criterion=criterion,
+            epoch=epoch,
+            nr_epochs=args.epochs,
+            device=device,
+            pretrain=False,
+            finetune=finetune,
+            mode=args.train_mode,
+        )
+
         lrs_net+=train_info['lrs_net']
         lrs_classifier+=train_info['lrs_class']
         # Evaluate model

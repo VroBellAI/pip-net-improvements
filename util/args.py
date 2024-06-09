@@ -25,6 +25,10 @@ def get_args() -> argparse.Namespace:
                         type=str,
                         default='convnext_tiny_26',
                         help='Base network used as backbone of PIP-Net. Default is convnext_tiny_26 with adapted strides to output 26x26 latent representations. Other option is convnext_tiny_13 that outputs 13x13 (smaller and faster to train, less fine-grained). Pretrained network on iNaturalist is only available for resnet50_inat. Options are: resnet18, resnet34, resnet50, resnet50_inat, resnet101, resnet152, convnext_tiny_26 and convnext_tiny_13.')
+    parser.add_argument('--train_mode',
+                        type=str,
+                        default='PLAIN',
+                        help='Experimental differentiable augment train mode (PLAIN-no diffr. augment; MATCH-augment with match; INV-augment forward and backward)')
     parser.add_argument('--batch_size',
                         type=int,
                         default=64,
