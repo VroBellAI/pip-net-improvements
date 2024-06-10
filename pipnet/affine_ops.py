@@ -188,7 +188,7 @@ def coords_to_match_mask(
     oor_mask = oor_mask.reshape((N, -1))
 
     # Create loss match mask;
-    mask = torch.zeros(size=(N, H * W, H * W))
+    mask = torch.zeros(size=(N, H * W, H * W)).to(device)
     batch_idxs = torch.arange(N).unsqueeze(1).to(device)
     mask[batch_idxs, id_coords_vec, t_coords_vec] = 1
 
