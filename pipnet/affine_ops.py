@@ -216,9 +216,9 @@ def coords_grid_to_vec(
 
 def draw_angles(
     batch_size: int,
-    min_angle: int = -45,
-    max_angle: int = 45,
-    step: int = 15,
+    min_angle: float = -45,
+    max_angle: float = 45,
+    step: float = 5,
 ) -> torch.Tensor:
     """
     Randomly samples angles from a range [min_angle, max_angle].
