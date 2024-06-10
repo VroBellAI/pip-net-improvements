@@ -484,10 +484,10 @@ def class_loss(
     return criterion(y_pred, targets)
 
 
-def class_accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:
+def class_accuracy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     preds = torch.argmax(logits, dim=1)
     correct = torch.sum(torch.eq(preds, targets))
-    return correct.item() / float(len(targets))
+    return correct / float(len(targets))
 
 
 # Extra uniform loss from https://www.tongzhouwang.info/hypersphere/. Currently not used but you could try adding it if you want.
