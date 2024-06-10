@@ -157,7 +157,7 @@ def train_step_rot_match(
     with torch.no_grad():
         # Generate coordinates match matrix;
         z_i, _ = proto_features.chunk(2)
-        match_mtrx = get_affine_match_mask(t_mtrx, z_i.shape)
+        match_mtrx = get_affine_match_mask(t_mtrx, z_i.shape, device)
 
     # Calculate loss and metrics;
     norm_mul = network.module._classification.normalization_multiplier

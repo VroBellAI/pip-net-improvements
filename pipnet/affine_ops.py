@@ -8,6 +8,7 @@ IMAGE_BATCH_SIZE = Tuple[int, int, int, int]
 def get_affine_match_mask(
     t_mtrx: torch.Tensor,
     x_size: IMAGE_BATCH_SIZE,
+    device: str,
 ) -> torch.Tensor:
     """
     Generates match matrix of shape (N, H*W, H*W)
@@ -21,15 +22,15 @@ def get_affine_match_mask(
     id_mtrx = get_identity_transform(N)
 
     # Get coordinates grids;
-    id_grid = transform_to_grid(id_mtrx, x_size)
-    t_grid = transform_to_grid(t_mtrx, x_size)
+    id_grid = transform_to_grid(id_mtrx, x_size, device)
+    t_grid = transform_to_grid(t_mtrx, x_size, device)
 
     # Get Out Of Orange coordinates mask and clip invalid coordinates;
     oor_mask = get_oor_mask(t_grid, x_size)
     t_grid = clip_coords(t_grid, x_size)
 
     # Get match mask for row-major coordinates;
-    match_mask = coords_to_match_mask(id_grid, t_grid, oor_mask, x_size)
+    match_mask = coords_to_match_mask(id_grid, t_grid, oor_mask, x_size, device)
     return match_mask
 
 
@@ -94,6 +95,7 @@ def get_rotation_mtrx(angles: torch.Tensor) -> torch.Tensor:
 def transform_to_grid(
     t_mtrx: torch.Tensor,
     x_size: IMAGE_BATCH_SIZE,
+    device: str,
 ) -> torch.Tensor:
     """
     Converts transformation matrix
@@ -110,7 +112,8 @@ def transform_to_grid(
 
     # Rescale coords [-1, 1] -> [0, W-1] & [0, H-1]
     grid = (grid + 1) * 0.5
-    grid = (grid * torch.tensor([W - 1, H - 1]).reshape((1, 2, 1, 1))).round().long()
+    scale = torch.tensor([W - 1, H - 1]).reshape((1, 2, 1, 1)).to(device)
+    grid = (grid * scale).round().long()
     return grid
 
 
@@ -165,6 +168,7 @@ def coords_to_match_mask(
     t_grid: torch.Tensor,
     oor_mask: torch.Tensor,
     x_size: IMAGE_BATCH_SIZE,
+    device: str,
 ) -> torch.Tensor:
     """
     Generates a binary match mask for row-major image coords.
@@ -184,7 +188,7 @@ def coords_to_match_mask(
 
     # Create loss match mask;
     mask = torch.zeros(size=(N, H * W, H * W))
-    batch_idxs = torch.arange(N).unsqueeze(1)
+    batch_idxs = torch.arange(N).unsqueeze(1).to(device)
     mask[batch_idxs, id_coords_vec, t_coords_vec] = 1
 
     # Combine OOR mask with loss match mask;
