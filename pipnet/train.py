@@ -78,9 +78,9 @@ def train_step_rot_inv(
         batch_size = targets.shape[0]
 
         if pretrain:
-            angles = draw_angles(batch_size, min_angle=-45, max_angle=45, step=5)
+            angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=5)
         else:
-            angles = draw_angles(batch_size, min_angle=-15, max_angle=15, step=2.5)
+            angles = draw_angles(batch_size, min_angle=-10, max_angle=10, step=5)
 
         # Get rotation matrix and inverse rotation matrix;
         t_mtrx = get_rotation_mtrx(angles).to(device)
@@ -150,9 +150,9 @@ def train_step_rot_match(
         batch_size = targets.shape[0]
 
         if pretrain:
-            angles = draw_angles(batch_size, min_angle=-45, max_angle=45, step=5)
+            angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=5)
         else:
-            angles = draw_angles(batch_size, min_angle=-15, max_angle=15, step=2.5)
+            angles = draw_angles(batch_size, min_angle=-10, max_angle=10, step=5)
 
         # Get rotation matrix;
         t_mtrx = get_rotation_mtrx(angles).to(device)
