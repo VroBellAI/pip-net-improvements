@@ -83,20 +83,20 @@ def train_step_rot_inv(
 
         # Transform;
         x_i = x1
-        x_t = affine(x2, t_mtrx, padding_mode="reflection")
+        x_t = affine(x2, t_mtrx, padding_mode="reflection", device=device)
 
     # Forward pass;
     proto_features, pooled, logits = network(torch.cat([x_i, x_t]))
 
     # Rotate back the transformed feature mask;
     z_i, z_t = proto_features.chunk(2)
-    z_t = affine(z_t, t_inv_mtrx, padding_mode="zeros")
+    z_t = affine(z_t, t_inv_mtrx, padding_mode="zeros", device=device)
 
     with torch.no_grad():
         # Get zeros mask (to mask loss);
         # Each channel should be the same -> choose one;
         loss_mask = torch.ones_like(z_t).to(device)
-        loss_mask = affine(loss_mask, t_inv_mtrx, padding_mode="zeros")
+        loss_mask = affine(loss_mask, t_inv_mtrx, padding_mode="zeros", device=device)
         loss_mask = get_zeros_mask(loss_mask)[:, 0:1, ...]
         loss_mask = loss_mask
 
@@ -149,7 +149,7 @@ def train_step_rot_match(
 
         # Get identity and transformed tensor;
         x_i = x1
-        x_t = affine(x2, t_mtrx, padding_mode="reflection")
+        x_t = affine(x2, t_mtrx, padding_mode="reflection", device=device)
 
     # Forward pass;
     proto_features, pooled, logits = network(torch.cat([x_i, x_t]))

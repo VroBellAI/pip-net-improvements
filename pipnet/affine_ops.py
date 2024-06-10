@@ -44,6 +44,7 @@ def get_identity_transform(batch_size: int) -> torch.Tensor:
 def affine(
     x: torch.Tensor,
     t_mtrx: torch.Tensor,
+    device: str,
     mode: str = "nearest",
     padding_mode: str = "zeros",
 ) -> torch.Tensor:
@@ -55,7 +56,7 @@ def affine(
         theta=t_mtrx,
         size=x.size(),
         align_corners=False,
-    )
+    ).to(device)
 
     # Apply the grid sample
     x_transformed = F.grid_sample(
@@ -107,7 +108,7 @@ def transform_to_grid(
 
     # Create coordinates grid;
     # Permute to shape: (N, 2, H, W);
-    grid = F.affine_grid(t_mtrx, size=x_size, align_corners=False)
+    grid = F.affine_grid(t_mtrx, size=x_size, align_corners=False).to(device)
     grid = grid.permute(0, 3, 1, 2)
 
     # Rescale coords [-1, 1] -> [0, W-1] & [0, H-1]
