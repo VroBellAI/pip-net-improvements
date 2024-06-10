@@ -26,6 +26,7 @@ def train_step_plain(
     finetune: bool,
     criterion: Callable,
     train_iter,
+    device: str,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Performs a standard PIP-Net train step.
@@ -65,6 +66,7 @@ def train_step_rot_inv(
     finetune: bool,
     criterion: Callable,
     train_iter,
+    device: str,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Performs PIP-Net train step
@@ -76,8 +78,8 @@ def train_step_rot_inv(
         angles = draw_angles(batch_size)
 
         # Get rotation matrix and inverse rotation matrix;
-        t_mtrx = get_rotation_mtrx(angles)
-        t_inv_mtrx = get_rotation_mtrx(-angles)
+        t_mtrx = get_rotation_mtrx(angles).to(device)
+        t_inv_mtrx = get_rotation_mtrx(-angles).to(device)
 
         # Transform;
         x_i = x1
@@ -93,9 +95,10 @@ def train_step_rot_inv(
     with torch.no_grad():
         # Get zeros mask (to mask loss);
         # Each channel should be the same -> choose one;
-        loss_mask = torch.ones_like(z_t)
+        loss_mask = torch.ones_like(z_t).to(device)
         loss_mask = affine(loss_mask, t_inv_mtrx, padding_mode="zeros")
         loss_mask = get_zeros_mask(loss_mask)[:, 0:1, ...]
+        loss_mask = loss_mask
 
     # Calculate loss and metrics;
     proto_features = torch.cat([z_i, z_t])
@@ -130,6 +133,7 @@ def train_step_rot_match(
     finetune: bool,
     criterion: Callable,
     train_iter,
+    device: str,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Performs PIP-Net train step
@@ -141,7 +145,7 @@ def train_step_rot_match(
         angles = draw_angles(batch_size)
 
         # Get rotation matrix;
-        t_mtrx = get_rotation_mtrx(angles)
+        t_mtrx = get_rotation_mtrx(angles).to(device)
 
         # Get identity and transformed tensor;
         x_i = x1
@@ -274,6 +278,7 @@ def train_pipnet(
                     finetune=finetune,
                     criterion=criterion,
                     train_iter=train_iter,
+                    device=device,
                 )
             elif mode == "INV":
                 loss, acc = train_step_rot_inv(
@@ -286,6 +291,7 @@ def train_pipnet(
                     finetune=finetune,
                     criterion=criterion,
                     train_iter=train_iter,
+                    device=device,
                 )
             else:
                 loss, acc = train_step_plain(
@@ -298,6 +304,7 @@ def train_pipnet(
                     finetune=finetune,
                     criterion=criterion,
                     train_iter=train_iter,
+                    device=device,
                 )
 
         # Compute the gradient
