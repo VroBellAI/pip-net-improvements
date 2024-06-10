@@ -11,6 +11,7 @@ from torch import Tensor
 import random
 from sklearn.model_selection import train_test_split
 
+
 def get_data(args: argparse.Namespace): 
     """
     Load the proper dataset based on the parsed arguments
@@ -18,16 +19,59 @@ def get_data(args: argparse.Namespace):
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
+
     if args.dataset =='CUB-200-2011':     
-        return get_birds(True, './data/CUB_200_2011/dataset/train_crop', './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_crop', args.image_size, args.seed, args.validation_size, './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_full')
+        return get_birds(
+            True,
+            args.data_dir+'/CUB_200_2011/dataset/train_crop',
+            args.data_dir+'/CUB_200_2011/dataset/train',
+            args.data_dir+'/CUB_200_2011/dataset/test_crop',
+            args.image_size,
+            args.seed,
+            args.validation_size,
+            args.data_dir+'/CUB_200_2011/dataset/train',
+            args.data_dir+'/CUB_200_2011/dataset/test_full',
+        )
     if args.dataset == 'pets':
-        return get_pets(True, './data/PETS/dataset/train','./data/PETS/dataset/train','./data/PETS/dataset/test', args.image_size, args.seed, args.validation_size)
+        return get_pets(
+            True,
+            args.data_dir+'/PETS/dataset/train',
+            args.data_dir+'/PETS/dataset/train',
+            args.data_dir+'/PETS/dataset/test',
+            args.image_size,
+            args.seed,
+            args.validation_size,
+        )
     if args.dataset == 'partimagenet': #use --validation_size of 0.2
-        return get_partimagenet(True, './data/partimagenet/dataset/all', './data/partimagenet/dataset/all', None, args.image_size, args.seed, args.validation_size) 
+        return get_partimagenet(
+            True,
+            args.data_dir+'/partimagenet/dataset/all',
+            args.data_dir+'/partimagenet/dataset/all',
+            None,
+            args.image_size,
+            args.seed,
+            args.validation_size,
+        )
     if args.dataset == 'CARS':
-        return get_cars(True, './data/cars/dataset/train', './data/cars/dataset/train', './data/cars/dataset/test', args.image_size, args.seed, args.validation_size)
+        return get_cars(
+            True,
+            args.data_dir+'/cars/dataset/train',
+            args.data_dir+'/cars/dataset/train',
+            args.data_dir+'/cars/dataset/test',
+            args.image_size,
+            args.seed,
+            args.validation_size,
+        )
     if args.dataset == 'grayscale_example':
-        return get_grayscale(True, './data/train', './data/train', './data/test', args.image_size, args.seed, args.validation_size)
+        return get_grayscale(
+            True,
+            args.data_dir+'/train',
+            args.data_dir+'/train',
+            args.data_dir+'/test',
+            args.image_size,
+            args.seed,
+            args.validation_size,
+        )
     raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
 
 def get_dataloaders(args: argparse.Namespace, device):
