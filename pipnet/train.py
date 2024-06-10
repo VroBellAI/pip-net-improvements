@@ -485,9 +485,6 @@ def class_loss(
 
 
 def class_accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:
-    assert logits.shape == targets.shape
-    assert targets.requires_grad is False
-
     preds = torch.argmax(logits, dim=1)
     correct = torch.sum(torch.eq(preds, targets))
     return correct.item() / float(len(targets))
