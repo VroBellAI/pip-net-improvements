@@ -50,6 +50,7 @@ def train_step_plain(
         finetune=finetune,
         criterion=criterion,
         train_iter=train_iter,
+        device=device,
         print=True,
         EPS=1e-7,
     )
@@ -117,6 +118,7 @@ def train_step_rot_inv(
         finetune=finetune,
         criterion=criterion,
         train_iter=train_iter,
+        device=device,
         print=True,
         EPS=1e-7,
     )
@@ -175,6 +177,7 @@ def train_step_rot_match(
         finetune=finetune,
         criterion=criterion,
         train_iter=train_iter,
+        device=device,
         print=True,
         EPS=1e-7,
     )
@@ -204,6 +207,7 @@ def train_pipnet(
     net.train()
 
     print(f"Training mode: {mode}")
+    print(f"Device: {device}")
 
     if pretrain:
         # Disable training of classification layer
@@ -360,6 +364,7 @@ def calculate_loss(
     finetune: bool,
     criterion: Callable,
     train_iter,
+    device: str,
     print: bool = True,
     EPS: float = 1e-7,
 ):
@@ -372,8 +377,8 @@ def calculate_loss(
     pf1, pf2 = proto_features.chunk(2)
 
     # Calculate loss based on training mode;
-    loss = torch.tensor(0.0)
-    acc = torch.tensor(0.0)
+    loss = torch.tensor(0.0).to(device)
+    acc = torch.tensor(0.0).to(device)
 
     a1_loss = align_loss(pf1, pf2.detach(), loss_mask, mode)
     a2_loss = align_loss(pf2, pf1.detach(), loss_mask, mode)
