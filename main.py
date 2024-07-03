@@ -24,7 +24,8 @@ from util.func import set_random_seed
 from util.log import Log, create_csv_log
 from util.data import get_dataloaders
 from util.args import get_args, save_args, get_optimizer_nn
-from util.vis_pipnet import visualize_topk, visualize_all
+from util.vis_pipnet import visualize_topk
+from util.visualize_prediction import visualize_all
 
 
 def run_pipnet(args: Namespace):

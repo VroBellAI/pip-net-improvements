@@ -1,7 +1,6 @@
 from tqdm import tqdm
 import argparse
 import torch
-import torch.nn.functional as F
 import torch.utils.data
 import os
 from PIL import Image, ImageDraw as D
@@ -9,8 +8,6 @@ import torchvision.transforms as transforms
 import torchvision
 from util.func import get_patch_size
 import random
-from util.visualize_prediction import vis_pred, vis_pred_experiments
-from typing import List
 
 
 @torch.no_grad()                    
@@ -311,46 +308,3 @@ def get_img_coordinates(img_size, softmaxes_shape, patchsize, skip, h_idx, w_idx
 
     return h_coor_min, h_coor_max, w_coor_min, w_coor_max
 
-
-def visualize_all(
-    network: torch.nn.Module,
-    proj_loader,
-    test_proj_loader,
-    classes: List[str],
-    device: torch.device,
-    args: argparse.Namespace,
-):
-    num_classes=len(classes)
-
-    # visualize predictions
-    visualize(
-        net=network,
-        projectloader=proj_loader,
-        num_classes=num_classes,
-        device=device,
-        foldername='visualised_prototypes',
-        args=args,
-    )
-    testset_img0_path = test_proj_loader.dataset.samples[0][0]
-    test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
-    vis_pred(
-        net=network,
-        vis_test_dir=test_path,
-        classes=classes,
-        device=device,
-        args=args,
-    )
-
-    if args.extra_test_image_folder == '':
-        return
-
-    if not os.path.exists(args.extra_test_image_folder):
-        return
-
-    vis_pred_experiments(
-        net=network,
-        imgs_dir=args.extra_test_image_folder,
-        classes=classes,
-        device=device,
-        args=args,
-    )

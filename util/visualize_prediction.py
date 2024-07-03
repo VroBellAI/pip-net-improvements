@@ -5,9 +5,10 @@ import torchvision
 from util.func import get_patch_size
 from torchvision import transforms
 import torch
-from util.vis_pipnet import get_img_coordinates
+from util.vis_pipnet import get_img_coordinates, visualize
 import matplotlib.pyplot as plt
 import numpy as np
+from typing import List
 
 try:
     import cv2
@@ -166,3 +167,47 @@ def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespac
                         draw = D.Draw(image)
                         draw.rectangle([(max_idx_w*skip,max_idx_h*skip), (min(args.image_size, max_idx_w*skip+patchsize), min(args.image_size, max_idx_h*skip+patchsize))], outline='yellow', width=2)
                         image.save(os.path.join(save_path, 'mul%s_p%s_sim%s_w%s_rect.png'%(str(f"{simweight:.3f}"),str(prototype_idx.item()),str(f"{pooled[0,prototype_idx].item():.3f}"),str(f"{net.module._classification.weight[pred_class_idx, prototype_idx].item():.3f}"))))
+
+
+def visualize_all(
+    network: torch.nn.Module,
+    proj_loader,
+    test_proj_loader,
+    classes: List[str],
+    device: torch.device,
+    args: argparse.Namespace,
+):
+    num_classes=len(classes)
+
+    # visualize predictions
+    visualize(
+        net=network,
+        projectloader=proj_loader,
+        num_classes=num_classes,
+        device=device,
+        foldername='visualised_prototypes',
+        args=args,
+    )
+    testset_img0_path = test_proj_loader.dataset.samples[0][0]
+    test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+    vis_pred(
+        net=network,
+        vis_test_dir=test_path,
+        classes=classes,
+        device=device,
+        args=args,
+    )
+
+    if args.extra_test_image_folder == '':
+        return
+
+    if not os.path.exists(args.extra_test_image_folder):
+        return
+
+    vis_pred_experiments(
+        net=network,
+        imgs_dir=args.extra_test_image_folder,
+        classes=classes,
+        device=device,
+        args=args,
+    )
