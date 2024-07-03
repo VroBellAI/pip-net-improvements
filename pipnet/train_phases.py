@@ -3,7 +3,7 @@ import torch
 from torch import nn
 import matplotlib.pyplot as plt
 
-from pipnet.train import train_pipnet
+from pipnet.train_steps import train_step
 from pipnet.test import eval_pipnet
 from util.log import Log
 
@@ -46,7 +46,7 @@ def pretrain_self_supervised(
         print("\nPretrain Epoch", epoch, "with batch size", train_loader.batch_size, flush=True)
 
         # Pretrain prototypes
-        train_info = train_pipnet(
+        train_info = train_step(
             net=network,
             train_loader=train_loader,
             optimizer_net=backbone_optimizer,
@@ -160,7 +160,8 @@ def train_supervised(
                 # freeze first layers of backbone, train rest
                 else:
                     for param in params_to_freeze:
-                        param.requires_grad = True  # Can be set to False if you want to train fewer layers of backbone
+                        # Can be set to False if you want to train fewer layers of backbone
+                        param.requires_grad = True
                     for param in network.module._add_on.parameters():
                         param.requires_grad = True
                     for param in params_to_train:
@@ -174,16 +175,19 @@ def train_supervised(
             with torch.no_grad():
                 torch.set_printoptions(profile="full")
                 network.module._classification.weight.copy_(
-                    torch.clamp(network.module._classification.weight.data - 0.001, min=0.))
-                print("Classifier weights: ",
-                      network.module._classification.weight[network.module._classification.weight.nonzero(as_tuple=True)], (
-                      network.module._classification.weight[
-                          network.module._classification.weight.nonzero(as_tuple=True)]).shape, flush=True)
+                    torch.clamp(network.module._classification.weight.data - 0.001, min=0.0)
+                )
+                class_w_nonzero = network.module._classification.weight[
+                    network.module._classification.weight.nonzero(as_tuple=True)
+                ]
+                print(f"Classifier weights: {class_w_nonzero} {class_w_nonzero.shape}", flush=True)
+
                 if bias:
                     print("Classifier bias: ", network.module._classification.bias, flush=True)
+
                 torch.set_printoptions(profile="default")
 
-        train_info = train_pipnet(
+        train_info = train_step(
             net=network,
             train_loader=train_loader,
             optimizer_net=backbone_optimizer,

@@ -13,10 +13,10 @@ from pipnet.affine_ops import (
 )
 
 from tqdm import tqdm
-from typing import Dict, Tuple, Callable, Optional
+from typing import Dict, Tuple, Callable, Optional, Union
 
 
-def train_step_plain(
+def forward_train_plain(
     epoch: int,
     network: torch.nn.Module,
     x1: torch.Tensor,
@@ -27,7 +27,7 @@ def train_step_plain(
     finetune: bool,
     criterion: Callable,
     train_iter,
-    device: str,
+    device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Performs a standard PIP-Net train step.
@@ -58,7 +58,7 @@ def train_step_plain(
     return loss, acc
 
 
-def train_step_rot_inv(
+def forward_train_rot_inv(
     epoch: int,
     network: torch.nn.Module,
     x1: torch.Tensor,
@@ -69,7 +69,7 @@ def train_step_rot_inv(
     finetune: bool,
     criterion: Callable,
     train_iter,
-    device: str,
+    device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Performs PIP-Net train step
@@ -134,7 +134,7 @@ def train_step_rot_inv(
     return loss, acc
 
 
-def train_step_rot_match(
+def forward_train_rot_match(
     epoch: int,
     network: torch.nn.Module,
     x1: torch.Tensor,
@@ -145,7 +145,7 @@ def train_step_rot_match(
     finetune: bool,
     criterion: Callable,
     train_iter,
-    device: str,
+    device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Performs PIP-Net train step
@@ -201,19 +201,19 @@ def train_step_rot_match(
     return loss, acc
 
 
-def train_pipnet(
-    net,
-    train_loader,
-    optimizer_net,
-    optimizer_classifier,
-    scheduler_net,
-    scheduler_classifier,
-    criterion,
-    epoch,
-    nr_epochs,
-    device,
-    pretrain=False,
-    finetune=False,
+def train_step(
+    net: torch.nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    optimizer_net: torch.optim.Optimizer,
+    optimizer_classifier: torch.optim.Optimizer,
+    scheduler_net: torch.optim.lr_scheduler.LRScheduler,
+    scheduler_classifier: torch.optim.lr_scheduler.LRScheduler,
+    criterion: torch.nn.Module,
+    epoch: Union[str, int],
+    nr_epochs: int,
+    device: torch.device,
+    pretrain: bool = False,
+    finetune: bool = False,
     mode: str = "PLAIN",
     progress_prefix: str = 'Train Epoch',
 ):
@@ -289,7 +289,7 @@ def train_pipnet(
         # Perform a train step
         with autocast():
             if mode == "MATCH":
-                loss, acc = train_step_rot_match(
+                loss, acc = forward_train_rot_match(
                     epoch=epoch,
                     network=net,
                     x1=x1,
@@ -303,7 +303,7 @@ def train_pipnet(
                     device=device,
                 )
             elif mode == "INV":
-                loss, acc = train_step_rot_inv(
+                loss, acc = forward_train_rot_inv(
                     epoch=epoch,
                     network=net,
                     x1=x1,
@@ -317,7 +317,7 @@ def train_pipnet(
                     device=device,
                 )
             else:
-                loss, acc = train_step_plain(
+                loss, acc = forward_train_plain(
                     epoch=epoch,
                     network=net,
                     x1=x1,
@@ -356,12 +356,16 @@ def train_pipnet(
 
         if not pretrain:
             with torch.no_grad():
-                net.module._classification.weight.copy_(torch.clamp(net.module._classification.weight.data - 1e-3,
-                                                                    min=0.))  # set weights in classification layer < 1e-3 to zero
+                net.module._classification.weight.copy_(
+                    torch.clamp(net.module._classification.weight.data - 1e-3, min=0.0)
+                )
                 net.module._classification.normalization_multiplier.copy_(
-                    torch.clamp(net.module._classification.normalization_multiplier.data, min=1.0))
+                    torch.clamp(net.module._classification.normalization_multiplier.data, min=1.0)
+                )
                 if net.module._classification.bias is not None:
-                    net.module._classification.bias.copy_(torch.clamp(net.module._classification.bias.data, min=0.))
+                    net.module._classification.bias.copy_(
+                        torch.clamp(net.module._classification.bias.data, min=0.0)
+                    )
 
     train_info['train_accuracy'] = total_acc / float(i + 1)
     train_info['loss'] = total_loss / float(i + 1)
@@ -384,7 +388,7 @@ def calculate_loss(
     finetune: bool,
     criterion: Callable,
     train_iter,
-    device: str,
+    device: torch.device,
     print: bool = True,
     EPS: float = 1e-7,
 ):
@@ -420,19 +424,25 @@ def calculate_loss(
 
     if print:
         with torch.no_grad():
+            relevant_scores = torch.relu(pooled - 0.1)
+            num_relevant_scores = torch.count_nonzero(relevant_scores, dim=1).float().mean().item()
+
             if pretrain:
                 train_iter.set_postfix_str(
-                    f'L: {loss.item():.3f}, LA:{a_loss.item():.2f}, LT:{t_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled - 0.1), dim=1).float().mean().item():.1f}',
-                    refresh=False,
-                )
-            elif finetune:
-                train_iter.set_postfix_str(
-                    f'L:{loss.item():.3f},LC:{c_loss.item():.3f}, LA:{a_loss.item():.2f}, LT:{t_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled - 0.1), dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',
+                    f'L: {loss.item():.3f}, '
+                    f'LA:{a_loss.item():.2f}, '
+                    f'LT:{t_loss.item():.3f}, '
+                    f'num_scores>0.1:{num_relevant_scores:.1f}',
                     refresh=False,
                 )
             else:
                 train_iter.set_postfix_str(
-                    f'L:{loss.item():.3f},LC:{c_loss.item():.3f}, LA:{a_loss.item():.2f}, LT:{t_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled - 0.1), dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',
+                    f'L:{loss.item():.3f}, '
+                    f'LC:{c_loss.item():.3f}, '
+                    f'LA:{a_loss.item():.2f}, '
+                    f'LT:{t_loss.item():.3f}, '
+                    f'num_scores>0.1:{num_relevant_scores:.1f}, '
+                    f'Ac:{acc:.3f}',
                     refresh=False,
                 )
     return loss, acc
