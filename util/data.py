@@ -178,7 +178,16 @@ def get_dataloaders(args: argparse.Namespace, device):
                                              drop_last=False
                                              )
     print("Num classes (k) = ", len(classes), classes[:5], "etc.", flush=True)
-    return trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes
+    loaders = {
+        "train": trainloader,
+        "test": testloader,
+        "pre_train": trainloader_pretraining,
+        "project": projectloader,
+        "test_project": test_projectloader,
+        "train_normal": trainloader_normal,
+        "train_normal_aug": trainloader_normal_augment,
+    }
+    return loaders, classes
 
 def create_datasets(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
@@ -220,7 +229,7 @@ def create_datasets(transform1, transform2, transform_no_augment, num_channels:i
         trainset_pretraining = torch.utils.data.Subset(TwoAugSupervisedDataset(trainvalset_pr, transform1=transform1p, transform2=transform2), indices=train_indices_pr)
     else:
         trainset_pretraining = None
-    
+
     return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
 def get_pets(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 

@@ -1,13 +1,25 @@
 import torch
+import random
+import numpy as np
+
+
+def set_random_seed(seed: int):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
 
 def get_patch_size(args):
     patchsize = 32
     skip = round((args.image_size - patchsize) / (args.wshape-1))
     return patchsize, skip
 
+
 def init_weights_xavier(m):
     if type(m) == torch.nn.Conv2d:
         torch.nn.init.xavier_uniform_(m.weight, gain=torch.nn.init.calculate_gain('sigmoid'))
+
 
 # https://gist.github.com/weiaicunzai/2a5ae6eac6712c70bde0630f3e76b77b?permalink_comment_id=3662215#gistcomment-3662215
 def topk_accuracy(output, target, topk=[1,]):

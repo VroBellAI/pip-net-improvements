@@ -1,3 +1,4 @@
+import os
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -6,22 +7,31 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from util.log import Log
 from util.func import topk_accuracy
-from sklearn.metrics import accuracy_score, roc_auc_score, balanced_accuracy_score, f1_score
+from util.data import get_dataloaders
+from sklearn.metrics import roc_auc_score, balanced_accuracy_score, f1_score
+from util.eval_cub_csv import eval_prototypes_cub_parts_csv, get_topk_cub, get_proto_patches_cub
+from argparse import Namespace
+from copy import deepcopy
+from typing import List, Dict, Optional
+
 
 @torch.no_grad()
-def eval_pipnet(net,
-        test_loader: DataLoader,
-        epoch,
-        device,
-        log: Log = None,  
-        progress_prefix: str = 'Eval Epoch'
-        ) -> dict:
+def eval_pipnet(
+    net,
+    test_loader: DataLoader,
+    epoch,
+    device,
+    log: Log = None,
+    progress_prefix: str = 'Eval Epoch',
+    train_info: Optional[Dict[str, float]] = None,
+):
     
     net = net.to(device)
     # Make sure the model is in evaluation mode
     net.eval()
     # Keep an info dict about the procedure
     info = dict()
+    train_info = dict() if train_info is None else train_info
     # Build a confusion matrix
     cm = np.zeros((net.module._num_classes, net.module._num_classes), dtype=int)
 
@@ -124,9 +134,21 @@ def eval_pipnet(net,
         except ValueError:
             pass
     else:
-        info['top5_accuracy'] = global_top5acc/len(test_loader.dataset) 
+        info['top5_accuracy'] = global_top5acc/len(test_loader.dataset)
 
-    return info
+    log.log_values(
+        'log_epoch_overview',
+        epoch,
+        info['top1_accuracy'],
+        info['top5_accuracy'],
+        info['almost_sim_nonzeros'],
+        info['local_size_all_classes'],
+        info['almost_nonzeros'],
+        info['num non-zero prototypes'],
+        train_info.get('train_accuracy', 'n.a.'),
+        train_info.get('loss', 'n.a.'),
+    )
+
 
 def acc_from_cm(cm: np.ndarray) -> float:
     """
@@ -290,3 +312,212 @@ def eval_ood(net,
     print("Samples seen:", seen, "of which predicted as In-Distribution:", predicted_as_id, flush=True)
     print("PIP-Net abstained from a decision for", abstained.item(), "images", flush=True)
     return predicted_as_id/seen
+
+
+def evaluate_prototype_purity(
+    epoch: int,
+    network: torch.nn.Module,
+    train_data_loader,
+    test_data_loader,
+    args: Namespace,
+    log: Log,
+    device: torch.device,
+    threshold: float = 0.5,
+):
+    projectset_img0_path = train_data_loader.dataset.samples[0][0]
+    project_path = os.path.split(os.path.split(projectset_img0_path)[0])[0].split("dataset")[0]
+    parts_loc_path = os.path.join(project_path, "parts/part_locs.txt")
+    parts_name_path = os.path.join(project_path, "parts/parts.txt")
+    imgs_id_path = os.path.join(project_path, "images.txt")
+
+    network.eval()
+    # Evaluate for train set;
+    print("\n\nEvaluating cub prototypes for training set", flush=True)
+    csvfile_topk = get_topk_cub(
+        net=network,
+        projectloader=train_data_loader,
+        k=10,
+        epoch=f'train_{epoch}',
+        device=device,
+        args=args,
+    )
+    eval_prototypes_cub_parts_csv(
+        csvfile=csvfile_topk,
+        parts_loc_path=parts_loc_path,
+        parts_name_path=parts_name_path,
+        imgs_id_path=imgs_id_path,
+        epoch=f'train_topk_{epoch}',
+        args=args,
+        log=log,
+    )
+
+    csvfile_all = get_proto_patches_cub(
+        net=network,
+        projectloader=train_data_loader,
+        epoch=f'train_all_{epoch}',
+        device=device,
+        args=args,
+        threshold=threshold,
+    )
+    eval_prototypes_cub_parts_csv(
+        csvfile=csvfile_all,
+        parts_loc_path=parts_loc_path,
+        parts_name_path=parts_name_path,
+        imgs_id_path=imgs_id_path,
+        epoch=f'train_all_thres{threshold}_{epoch}',
+        args=args,
+        log=log,
+    )
+
+    # Evaluate for test set;
+    print("\n\nEvaluating cub prototypes for test set", flush=True)
+    csvfile_topk = get_topk_cub(
+        net=network,
+        projectloader=test_data_loader,
+        k=10,
+        epoch=f'test_{epoch}',
+        device=device,
+        args=args,
+    )
+    eval_prototypes_cub_parts_csv(
+        csvfile=csvfile_topk,
+        parts_loc_path=parts_loc_path,
+        parts_name_path=parts_name_path,
+        imgs_id_path=imgs_id_path,
+        epoch=f'test_topk_{epoch}',
+        args=args,
+        log=log,
+    )
+
+    csvfile_all = get_proto_patches_cub(
+        net=network,
+        projectloader=test_data_loader,
+        epoch=f'test_{epoch}',
+        device=device,
+        args=args,
+        threshold=threshold,
+    )
+    eval_prototypes_cub_parts_csv(
+        csvfile=csvfile_all,
+        parts_loc_path=parts_loc_path,
+        parts_name_path=parts_name_path,
+        imgs_id_path=imgs_id_path,
+        epoch=f'test_all_thres{threshold}_{epoch}',
+        args=args,
+        log=log,
+    )
+
+
+def evaluate_ood_detection(
+    epoch: int,
+    network: torch.nn.Module,
+    test_data_loader,
+    ood_datasets: List[str],
+    percentile: float,
+    log: Log,
+    args: Namespace,
+    device: torch.device,
+):
+
+    print(
+        f"OOD Evaluation for epoch {epoch}, "
+        f"with percent of {percentile}",
+        flush=True,
+    )
+    _, _, _, class_thresholds = get_thresholds(
+        net=network,
+        test_loader=test_data_loader,
+        epoch=epoch,
+        device=device,
+        percentile=percentile,
+        log=log,
+    )
+    print(f"Thresholds: {class_thresholds}", flush=True)
+
+    # Evaluate with in-distribution data;
+    id_fraction = eval_ood(
+        net=network,
+        test_loader=test_data_loader,
+        epoch=epoch,
+        device=device,
+        threshold=class_thresholds,
+    )
+    print(
+        f"ID class threshold ID fraction (TPR) "
+        f"with percent {percentile}: {id_fraction}",
+        flush=True,
+    )
+
+    # Evaluate with out-of-distribution data;
+    for ood_dataset in ood_datasets:
+        # Omit used dataset;
+        if ood_dataset == args.dataset:
+            continue
+
+        print(f"OOD dataset: {ood_dataset}", flush=True)
+        ood_args = deepcopy(args)
+        ood_args.dataset = ood_dataset
+        _, _, _, _, _, ood_test_loader, _, _ = get_dataloaders(ood_args, device)
+
+        id_fraction = eval_ood(
+            net=network,
+            test_loader=ood_test_loader,
+            epoch=epoch,
+            device=device,
+            threshold=class_thresholds,
+        )
+        print(
+            f"{args.dataset} - OOD {ood_dataset} class threshold ID fraction (FPR) "
+            f"with percent {percentile}: {id_fraction}",
+            flush=True,
+        )
+
+
+def display_proto_data(network: torch.nn.Module, data_loader, validation_size: float):
+    head_mtrx = network.module._classification.weight
+    head_mtrx_non_zero = head_mtrx[head_mtrx.nonzero(as_tuple=True)]
+    head_bias = network.module._classification.bias
+
+    # Print prototypes data;
+    print(
+        f"Classifier weights:"
+        f"{head_mtrx}"
+        f"{head_mtrx.shape}",
+        flush=True,
+    )
+    print(
+        f"Classifier weights nonzero:"
+        f"{head_mtrx_non_zero}"
+        f"{head_mtrx_non_zero.shape}",
+        flush=True,
+    )
+    print(
+        f"Classifier bias:"
+        f"{head_bias}"
+        f"{head_bias.shape}",
+        flush=True,
+    )
+
+    # Print weights and relevant prototypes per class;
+    class_names = list(data_loader.dataset.class_to_idx.keys())
+    class_idxs = list(data_loader.dataset.class_to_idx.values())
+
+    # TODO: is shapes order valid???
+    num_classes, num_prototypes = head_mtrx.shape
+    for c_idx in range(num_classes):
+        relevant_ps = []
+        proto_weights = head_mtrx[c_idx, :]
+
+        for p_idx in range(num_prototypes):
+            if proto_weights[p_idx] > 1e-3:
+                relevant_ps.append((p_idx, proto_weights[p_idx].item()))
+
+        if validation_size != 0.0:
+            continue
+
+        print(
+            f"Class {c_idx}"
+            f"({class_names[class_idxs.index(c_idx)]}):"
+            f"has {len(relevant_ps)} relevant prototypes: {relevant_ps}",
+            flush=True,
+        )

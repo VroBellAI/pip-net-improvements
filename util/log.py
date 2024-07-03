@@ -3,6 +3,7 @@ import argparse
 
 from util.args import save_args
 
+
 class Log:
 
     """
@@ -77,4 +78,29 @@ class Log:
 
     def log_args(self, args: argparse.Namespace):
         save_args(args, self._log_dir)
+
+
+def create_csv_log(log: Log, num_classes: int):
+    log_cols = [
+        'log_epoch_overview',
+        'epoch',
+        'test_top1_acc',
+        'test_top5_acc',
+        'almost_sim_nonzeros',
+        'local_size_all_classes',
+        'almost_nonzeros_pooled',
+        'num_nonzero_prototypes',
+        'mean_train_acc',
+        'mean_train_loss_during_epoch',
+    ]
+    if num_classes == 2:
+        log_cols[log_cols.index('test_top5_acc')] = 'test_f1'
+        print(
+            "Your dataset only has two classes. "
+            "Is the number of samples per class similar? "
+            "If the data is imbalanced, we recommend to use the "
+            "--weighted_loss flag to account for the imbalance.",
+            flush=True,
+        )
+    log.create_log(*log_cols)
 

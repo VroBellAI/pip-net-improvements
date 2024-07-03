@@ -17,6 +17,7 @@ from typing import Dict, Tuple, Callable, Optional
 
 
 def train_step_plain(
+    epoch: int,
     network: torch.nn.Module,
     x1: torch.Tensor,
     x2: torch.Tensor,
@@ -58,6 +59,7 @@ def train_step_plain(
 
 
 def train_step_rot_inv(
+    epoch: int,
     network: torch.nn.Module,
     x1: torch.Tensor,
     x2: torch.Tensor,
@@ -77,10 +79,13 @@ def train_step_rot_inv(
         # Randomly draw angles;
         batch_size = targets.shape[0]
 
-        if pretrain:
-            angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=5)
+        if pretrain or finetune:
+            angles = draw_angles(batch_size, min_angle=0, max_angle=1, step=1)
         else:
-            angles = draw_angles(batch_size, min_angle=-10, max_angle=10, step=5)
+            if epoch <= 11:
+                angles = draw_angles(batch_size, min_angle=-15, max_angle=15, step=2.5)
+            else:
+                angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=2.5)
 
         # Get rotation matrix and inverse rotation matrix;
         t_mtrx = get_rotation_mtrx(angles).to(device)
@@ -130,6 +135,7 @@ def train_step_rot_inv(
 
 
 def train_step_rot_match(
+    epoch: int,
     network: torch.nn.Module,
     x1: torch.Tensor,
     x2: torch.Tensor,
@@ -149,10 +155,13 @@ def train_step_rot_match(
         # Randomly draw angles;
         batch_size = targets.shape[0]
 
-        if pretrain:
-            angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=5)
+        if pretrain or finetune:
+            angles = draw_angles(batch_size, min_angle=0, max_angle=1, step=1)
         else:
-            angles = draw_angles(batch_size, min_angle=-10, max_angle=10, step=5)
+            if epoch <= 11:
+                angles = draw_angles(batch_size, min_angle=-15, max_angle=15, step=2.5)
+            else:
+                angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=2.5)
 
         # Get rotation matrix;
         t_mtrx = get_rotation_mtrx(angles).to(device)
@@ -231,7 +240,7 @@ def train_pipnet(
     total_acc = 0.0
 
     iters = len(train_loader)
-    # Show progress on progress bar. 
+    # Show progress on progress bar.
     train_iter = tqdm(
         enumerate(train_loader),
         total=len(train_loader),
@@ -281,6 +290,7 @@ def train_pipnet(
         with autocast():
             if mode == "MATCH":
                 loss, acc = train_step_rot_match(
+                    epoch=epoch,
                     network=net,
                     x1=x1,
                     x2=x2,
@@ -294,6 +304,7 @@ def train_pipnet(
                 )
             elif mode == "INV":
                 loss, acc = train_step_rot_inv(
+                    epoch=epoch,
                     network=net,
                     x1=x1,
                     x2=x2,
@@ -307,6 +318,7 @@ def train_pipnet(
                 )
             else:
                 loss, acc = train_step_plain(
+                    epoch=epoch,
                     network=net,
                     x1=x1,
                     x2=x2,

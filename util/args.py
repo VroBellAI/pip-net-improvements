@@ -157,7 +157,7 @@ def save_args(args: argparse.Namespace, directory_path: str) -> None:
     with open(directory_path + '/args.pickle', 'wb') as f:
         pickle.dump(args, f)                                                                               
     
-def get_optimizer_nn(net, args: argparse.Namespace) -> torch.optim.Optimizer:
+def get_optimizer_nn(net, args: argparse.Namespace):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     random.seed(args.seed)
@@ -222,7 +222,18 @@ def get_optimizer_nn(net, args: argparse.Namespace) -> torch.optim.Optimizer:
     if args.optimizer == 'Adam':
         optimizer_net = torch.optim.AdamW(paramlist_net,lr=args.lr,weight_decay=args.weight_decay)
         optimizer_classifier = torch.optim.AdamW(paramlist_classifier,lr=args.lr,weight_decay=args.weight_decay)
-        return optimizer_net, optimizer_classifier, params_to_freeze, params_to_train, params_backbone
+
+        optimizers = {
+            "backbone": optimizer_net,
+            "head": optimizer_classifier,
+        }
+
+        params = {
+            "freeze": params_to_freeze,
+            "train": params_to_train,
+            "backbone": params_backbone,
+        }
+        return optimizers, params
     else:
         raise ValueError("this optimizer type is not implemented")
 
