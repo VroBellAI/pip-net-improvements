@@ -4,8 +4,11 @@ from typing import Tuple, List
 
 
 def get_device(args: argparse.Namespace) -> Tuple[torch.device, List[int]]:
-    gpu_list = args.gpu_ids.split(',')
-    device_ids = [int(gpu_id) for gpu_id in gpu_list]
+
+    device_ids = []
+    if args.gpu_ids != '':
+        gpu_list = args.gpu_ids.split(',')
+        device_ids = [int(gpu_id) for gpu_id in gpu_list]
 
     if args.disable_cuda or not torch.cuda.is_available():
         device = torch.device('cpu')
