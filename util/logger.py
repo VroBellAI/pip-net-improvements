@@ -1,15 +1,15 @@
 import os
 import argparse
+import matplotlib.pyplot as plt
+from typing import List
 
 from util.args import save_args
 
 
-class Log:
-
+class Logger:
     """
-    Object for managing the log directory
+    Object for managing the log directory.
     """
-
     def __init__(self, log_dir: str):  # Store log in log_dir
 
         self._log_dir = log_dir
@@ -22,7 +22,8 @@ class Log:
             os.mkdir(self.metadata_dir)
         if not os.path.isdir(self.checkpoint_dir):
             os.mkdir(self.checkpoint_dir)
-        
+
+        print(f"Logger log dir: {self._log_dir}", flush=True)
 
     @property
     def log_dir(self):
@@ -80,7 +81,7 @@ class Log:
         save_args(args, self._log_dir)
 
 
-def create_csv_log(log: Log, num_classes: int):
+def create_csv_log(logger: Logger, num_classes: int):
     log_cols = [
         'log_epoch_overview',
         'epoch',
@@ -102,5 +103,15 @@ def create_csv_log(log: Log, num_classes: int):
             "--weighted_loss flag to account for the imbalance.",
             flush=True,
         )
-    log.create_log(*log_cols)
+    logger.create_log(*log_cols)
 
+
+def plot_learning_rate_curve(
+    log_dir: str,
+    name: str,
+    lr_vec: List[float],
+):
+    save_dir = os.path.join(log_dir, f'{name}.png')
+    plt.clf()
+    plt.plot(lr_vec)
+    plt.savefig(save_dir)

@@ -1,15 +1,12 @@
 import os
 import argparse
 import pickle
-import numpy as np
-import random
-import torch
-import torch.optim
 
 """
-    Utility functions for handling parsed arguments
-
+Utility functions for handling parsed arguments.
 """
+
+
 def get_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser('Train a PIP-Net')
@@ -119,18 +116,19 @@ def get_args() -> argparse.Namespace:
                         help='Num workers in dataloaders.')
     parser.add_argument('--bias',
                         action='store_true',
-                        help='Flag that indicates whether to include a trainable bias in the linear classification layer.'
-                        )
+                        help='Flag that indicates whether to include a trainable bias in the linear classification layer.')
     parser.add_argument('--extra_test_image_folder',
                         type=str,
                         default='./experiments',
                         help='Folder with images that PIP-Net will predict and explain, that are not in the training or test set. E.g. images with 2 objects or OOD image. Images should be in subfolder. E.g. images in ./experiments/images/, and argument --./experiments')
+    parser.add_argument('--mixed_precision',
+                        action='store_true',
+                        help='Flag that indicates whether to use the automatic mixed precision.')
 
     args = parser.parse_args()
     if len(args.log_dir.split('/'))>2:
         if not os.path.exists(args.log_dir):
             os.makedirs(args.log_dir)
-
 
     return args
 
@@ -156,84 +154,3 @@ def save_args(args: argparse.Namespace, directory_path: str) -> None:
     # Pickle the args for possible reuse
     with open(directory_path + '/args.pickle', 'wb') as f:
         pickle.dump(args, f)                                                                               
-    
-def get_optimizer_nn(net, args: argparse.Namespace):
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-
-    #create parameter groups
-    params_to_freeze = []
-    params_to_train = []
-    params_backbone = []
-    # set up optimizer
-    if 'resnet50' in args.net: 
-        # freeze resnet50 except last convolutional layer
-        for name,param in net.module._net.named_parameters():
-            if 'layer4.2' in name:
-                params_to_train.append(param)
-            elif 'layer4' in name or 'layer3' in name:
-                params_to_freeze.append(param)
-            elif 'layer2' in name:
-                params_backbone.append(param)
-            else: #such that model training fits on one gpu. 
-                param.requires_grad = False
-                # params_backbone.append(param)
-    
-    elif 'convnext' in args.net:
-        print("chosen network is convnext", flush=True)
-        for name,param in net.module._net.named_parameters():
-            if 'features.7.2' in name: 
-                params_to_train.append(param)
-            elif 'features.7' in name or 'features.6' in name:
-                params_to_freeze.append(param)
-            # CUDA MEMORY ISSUES? COMMENT LINE 202-203 AND USE THE FOLLOWING LINES INSTEAD
-            # elif 'features.5' in name or 'features.4' in name:
-            #     params_backbone.append(param)
-            # else:
-            #     param.requires_grad = False
-            else:
-                params_backbone.append(param)
-    else:
-        print("Network is not ResNet or ConvNext.", flush=True)     
-    classification_weight = []
-    classification_bias = []
-    for name, param in net.module._classification.named_parameters():
-        if 'weight' in name:
-            classification_weight.append(param)
-        elif 'multiplier' in name:
-            param.requires_grad = False
-        else:
-            if args.bias:
-                classification_bias.append(param)
-    
-    paramlist_net = [
-            {"params": params_backbone, "lr": args.lr_net, "weight_decay_rate": args.weight_decay},
-            {"params": params_to_freeze, "lr": args.lr_block, "weight_decay_rate": args.weight_decay},
-            {"params": params_to_train, "lr": args.lr_block, "weight_decay_rate": args.weight_decay},
-            {"params": net.module._add_on.parameters(), "lr": args.lr_block*10., "weight_decay_rate": args.weight_decay}]
-            
-    paramlist_classifier = [
-            {"params": classification_weight, "lr": args.lr, "weight_decay_rate": args.weight_decay},
-            {"params": classification_bias, "lr": args.lr, "weight_decay_rate": 0},
-    ]
-          
-    if args.optimizer == 'Adam':
-        optimizer_net = torch.optim.AdamW(paramlist_net,lr=args.lr,weight_decay=args.weight_decay)
-        optimizer_classifier = torch.optim.AdamW(paramlist_classifier,lr=args.lr,weight_decay=args.weight_decay)
-
-        optimizers = {
-            "backbone": optimizer_net,
-            "head": optimizer_classifier,
-        }
-
-        params = {
-            "freeze": params_to_freeze,
-            "train": params_to_train,
-            "backbone": params_backbone,
-        }
-        return optimizers, params
-    else:
-        raise ValueError("this optimizer type is not implemented")
-

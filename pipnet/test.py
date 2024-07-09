@@ -5,7 +5,7 @@ import torch
 import torch.optim
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
-from util.log import Log
+from util.logger import Logger
 from util.func import topk_accuracy
 from util.data import get_dataloaders
 from sklearn.metrics import roc_auc_score, balanced_accuracy_score, f1_score
@@ -21,7 +21,7 @@ def eval_pipnet(
     test_loader: DataLoader,
     epoch,
     device,
-    log: Log = None,
+    log: Logger = None,
     progress_prefix: str = 'Eval Epoch',
     train_info: Optional[Dict[str, float]] = None,
 ):
@@ -172,14 +172,14 @@ def acc_from_cm(cm: np.ndarray) -> float:
 @torch.no_grad()
 # Calculates class-specific threshold for the FPR@X metric. Also calculates threshold for images with correct prediction (currently not used, but can be insightful)
 def get_thresholds(net,
-        test_loader: DataLoader,
-        epoch,
-        device,
-        percentile:float = 95.,
-        log: Log = None,  
-        log_prefix: str = 'log_eval_epochs', 
-        progress_prefix: str = 'Get Thresholds Epoch'
-        ) -> dict:
+                   test_loader: DataLoader,
+                   epoch,
+                   device,
+                   percentile:float = 95.,
+                   log: Logger = None,
+                   log_prefix: str = 'log_eval_epochs',
+                   progress_prefix: str = 'Get Thresholds Epoch'
+                   ) -> dict:
     
     net = net.to(device)
     # Make sure the model is in evaluation mode
@@ -320,7 +320,7 @@ def evaluate_prototype_purity(
     train_data_loader,
     test_data_loader,
     args: Namespace,
-    log: Log,
+    log: Logger,
     device: torch.device,
     threshold: float = 0.5,
 ):
@@ -414,7 +414,7 @@ def evaluate_ood_detection(
     test_data_loader,
     ood_datasets: List[str],
     percentile: float,
-    log: Log,
+    log: Logger,
     args: Namespace,
     device: torch.device,
 ):

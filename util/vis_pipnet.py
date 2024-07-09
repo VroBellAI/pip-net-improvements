@@ -11,7 +11,7 @@ import random
 
 
 @torch.no_grad()                    
-def visualize_topk(net, projectloader, num_classes, device, foldername, args: argparse.Namespace, k=10):
+def visualize_topk(net, projectloader, device, foldername, args: argparse.Namespace, k=10):
     print("Visualizing prototypes for topk...", flush=True)
     dir = os.path.join(args.log_dir, foldername)
     if not os.path.exists(dir):

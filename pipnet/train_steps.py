@@ -1,9 +1,11 @@
 import torch
-import torch.nn.functional as F
-import torch.optim
-import torch.utils.data
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import autocast, GradScaler
+from torch.utils.data import DataLoader
 
+from pipnet import PIPNet
+from pipnet.loss import PIPNetLoss, LOSS_DATA
 from pipnet.affine_ops import (
     affine,
     get_rotation_mtrx,
@@ -13,22 +15,17 @@ from pipnet.affine_ops import (
 )
 
 from tqdm import tqdm
-from typing import Dict, Tuple, Callable, Optional, Union
+from typing import Dict, Tuple, Callable, Optional
 
 
 def forward_train_plain(
-    epoch: int,
-    network: torch.nn.Module,
+    network: PIPNet,
     x1: torch.Tensor,
     x2: torch.Tensor,
     targets: torch.Tensor,
-    loss_weights: Dict[str, float],
-    pretrain: bool,
-    finetune: bool,
-    criterion: Callable,
-    train_iter,
+    loss_func: PIPNetLoss,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> LOSS_DATA:
     """
     Performs a standard PIP-Net train step.
     """
@@ -36,41 +33,24 @@ def forward_train_plain(
     proto_features, pooled, logits = network(torch.cat([x1, x2]))
 
     # Calculate loss and metrics;
-    norm_mul = network.module._classification.normalization_multiplier
-
-    loss, acc = calculate_loss(
-        mode="PLAIN",
+    loss_data = loss_func(
         proto_features=proto_features,
         pooled=pooled,
         logits=logits,
         targets=targets,
         loss_mask=None,
-        loss_weights=loss_weights,
-        net_normalization_multiplier=norm_mul,
-        pretrain=pretrain,
-        finetune=finetune,
-        criterion=criterion,
-        train_iter=train_iter,
-        device=device,
-        print=True,
-        EPS=1e-7,
     )
-    return loss, acc
+    return loss_data
 
 
 def forward_train_rot_inv(
-    epoch: int,
-    network: torch.nn.Module,
+    network: PIPNet,
     x1: torch.Tensor,
     x2: torch.Tensor,
     targets: torch.Tensor,
-    loss_weights: Dict[str, float],
-    pretrain: bool,
-    finetune: bool,
-    criterion: Callable,
-    train_iter,
+    loss_func: PIPNetLoss,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> LOSS_DATA:
     """
     Performs PIP-Net train step
     with forward and inverse rotation.
@@ -78,14 +58,7 @@ def forward_train_rot_inv(
     with torch.no_grad():
         # Randomly draw angles;
         batch_size = targets.shape[0]
-
-        if pretrain or finetune:
-            angles = draw_angles(batch_size, min_angle=0, max_angle=1, step=1)
-        else:
-            if epoch <= 11:
-                angles = draw_angles(batch_size, min_angle=-15, max_angle=15, step=2.5)
-            else:
-                angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=2.5)
+        angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=2.5)
 
         # Get rotation matrix and inverse rotation matrix;
         t_mtrx = get_rotation_mtrx(angles).to(device)
@@ -112,41 +85,26 @@ def forward_train_rot_inv(
 
     # Calculate loss and metrics;
     proto_features = torch.cat([z_i, z_t])
-    norm_mul = network.module._classification.normalization_multiplier
 
-    loss, acc = calculate_loss(
-        mode="INV",
+    # Calculate loss and metrics;
+    loss_data = loss_func(
         proto_features=proto_features,
         pooled=pooled,
         logits=logits,
         targets=targets,
         loss_mask=loss_mask,
-        loss_weights=loss_weights,
-        net_normalization_multiplier=norm_mul,
-        pretrain=pretrain,
-        finetune=finetune,
-        criterion=criterion,
-        train_iter=train_iter,
-        device=device,
-        print=True,
-        EPS=1e-7,
     )
-    return loss, acc
+    return loss_data
 
 
 def forward_train_rot_match(
-    epoch: int,
-    network: torch.nn.Module,
+    network: PIPNet,
     x1: torch.Tensor,
     x2: torch.Tensor,
     targets: torch.Tensor,
-    loss_weights: Dict[str, float],
-    pretrain: bool,
-    finetune: bool,
-    criterion: Callable,
-    train_iter,
+    loss_func: PIPNetLoss,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> LOSS_DATA:
     """
     Performs PIP-Net train step
     with rotation and matching.
@@ -154,14 +112,7 @@ def forward_train_rot_match(
     with torch.no_grad():
         # Randomly draw angles;
         batch_size = targets.shape[0]
-
-        if pretrain or finetune:
-            angles = draw_angles(batch_size, min_angle=0, max_angle=1, step=1)
-        else:
-            if epoch <= 11:
-                angles = draw_angles(batch_size, min_angle=-15, max_angle=15, step=2.5)
-            else:
-                angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=2.5)
+        angles = draw_angles(batch_size, min_angle=-30, max_angle=30, step=2.5)
 
         # Get rotation matrix;
         t_mtrx = get_rotation_mtrx(angles).to(device)
@@ -179,349 +130,252 @@ def forward_train_rot_match(
         match_mtrx = get_affine_match_mask(t_mtrx, z_i.shape, device)
 
     # Calculate loss and metrics;
-    norm_mul = network.module._classification.normalization_multiplier
-
-    loss, acc = calculate_loss(
-        mode="MATCH",
+    loss_data = loss_func(
         proto_features=proto_features,
         pooled=pooled,
         logits=logits,
         targets=targets,
         loss_mask=match_mtrx,
-        loss_weights=loss_weights,
-        net_normalization_multiplier=norm_mul,
-        pretrain=pretrain,
-        finetune=finetune,
-        criterion=criterion,
-        train_iter=train_iter,
-        device=device,
-        print=True,
-        EPS=1e-7,
     )
-    return loss, acc
+    return loss_data
 
 
-def train_step(
-    net: torch.nn.Module,
-    train_loader: torch.utils.data.DataLoader,
-    optimizer_net: torch.optim.Optimizer,
-    optimizer_classifier: torch.optim.Optimizer,
-    scheduler_net: torch.optim.lr_scheduler.LRScheduler,
-    scheduler_classifier: torch.optim.lr_scheduler.LRScheduler,
-    criterion: torch.nn.Module,
-    epoch: Union[str, int],
-    nr_epochs: int,
+def train_step_fp(
+    forward_pass_func: Callable,
+    network: PIPNet,
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    targets: torch.Tensor,
+    loss_func: PIPNetLoss,
+    scaler: Optional[GradScaler],
+    head_optimizer: Optimizer,
+    backbone_optimizer: Optimizer,
     device: torch.device,
-    pretrain: bool = False,
-    finetune: bool = False,
-    mode: str = "PLAIN",
+    pretrain: bool,
+    finetune: bool,
+) -> LOSS_DATA:
+    """
+    Performs train step with Full Precision.
+    """
+    # Reset the gradients;
+    head_optimizer.zero_grad(set_to_none=True)
+    backbone_optimizer.zero_grad(set_to_none=True)
+
+    # Perform a train step;
+    loss_data = forward_pass_func(
+        network=network,
+        x1=x1,
+        x2=x2,
+        targets=targets,
+        loss_func=loss_func,
+        device=device,
+    )
+
+    # Compute the gradient;
+    total_loss = loss_data["total_loss"]
+    total_loss.backward()
+
+    # Optimize;
+    if not pretrain:
+        head_optimizer.step()
+
+    if not finetune:
+        backbone_optimizer.step()
+
+    return loss_data
+
+
+def train_step_amp(
+    forward_pass_func: Callable,
+    network: PIPNet,
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    targets: torch.Tensor,
+    loss_func: PIPNetLoss,
+    scaler: GradScaler,
+    head_optimizer: Optimizer,
+    backbone_optimizer: Optimizer,
+    device: torch.device,
+    pretrain: bool,
+    finetune: bool,
+) -> LOSS_DATA:
+    """
+    Performs train step with Automatic Mixed Precision.
+    """
+    # Reset the gradients;
+    head_optimizer.zero_grad(set_to_none=True)
+    backbone_optimizer.zero_grad(set_to_none=True)
+
+    # Perform a train step;
+    with autocast():
+        loss_data = forward_pass_func(
+            network=network,
+            x1=x1,
+            x2=x2,
+            targets=targets,
+            loss_func=loss_func,
+            device=device,
+        )
+
+    # Compute the gradient;
+    total_loss = loss_data["total_loss"]
+    scaler.scale(total_loss).backward()
+
+    # Optimize;
+    if not pretrain:
+        scaler.step(head_optimizer)
+
+    if not finetune:
+        scaler.step(backbone_optimizer)
+
+    # Update gradient scaler;
+    scaler.update()
+    return loss_data
+
+
+def select_train_step(
+    use_mixed_precision: bool,
+) -> Tuple[Callable, Optional[GradScaler]]:
+    """
+    Selects Full or Mixed precision train step function;
+    """
+    if use_mixed_precision:
+        return train_step_amp, GradScaler()
+
+    return train_step_fp, None
+
+
+def select_forward_pass(mode: str) -> Callable:
+    """
+    Selects training forward pass function;
+    """
+    if mode == "MATCH":
+        return forward_train_rot_match
+    elif mode == "INV":
+        return forward_train_rot_inv
+    elif mode == "PLAIN":
+        return forward_train_plain
+
+    raise Exception(f"Training mode {mode} not implemented!")
+
+
+def train_epoch(
+    epoch_idx: int,
+    net: PIPNet,
+    train_loader: DataLoader,
+    backbone_optimizer: Optimizer,
+    head_optimizer: Optional[Optimizer],
+    backbone_scheduler: LRScheduler,
+    head_scheduler: Optional[LRScheduler],
+    loss_func: PIPNetLoss,
+    device: torch.device,
+    use_mixed_precision: bool = True,
     progress_prefix: str = 'Train Epoch',
-):
-    # Initialize gradient scaler for AMP
-    scaler = GradScaler()
-
-    # Make sure the model is in train mode
-    net.train()
-
-    print(f"Training mode: {mode}")
+) -> Dict[str, float]:
+    """
+    Performs single train epoch.
+    Returns train info:
+    loss value, accuracy value, learning rates.
+    """
+    # Extract selected augmentation mode;
+    aug_mode = loss_func.aug_mode
+    print(f"Training aug mode: {aug_mode}")
     print(f"Device: {device}")
 
-    if pretrain:
-        # Disable training of classification layer
-        net.module._classification.requires_grad = False
-        progress_prefix = 'Pretrain Epoch'
-    else:
-        # Enable training of classification layer (disabled in case of pretraining)
-        net.module._classification.requires_grad = True
+    # Select train step function (AMP or FP);
+    train_step_func, scaler = select_train_step(use_mixed_precision)
+
+    # Select forward pass function (Rotations aug or plain);
+    forward_pass_func = select_forward_pass(aug_mode)
+
+    # Make sure the model is in train mode;
+    net.train()
 
     # Store info about the procedure
     train_info = dict()
     total_loss = 0.0
     total_acc = 0.0
+    num_steps = len(train_loader)
 
-    iters = len(train_loader)
     # Show progress on progress bar.
     train_iter = tqdm(
         enumerate(train_loader),
         total=len(train_loader),
-        desc=progress_prefix + '%s' % epoch,
+        desc=progress_prefix + '%s' % epoch_idx,
         mininterval=2.0,
         ncols=0,
     )
 
+    # Count parameters that require gradient;
     count_param = 0
     for name, param in net.named_parameters():
         if param.requires_grad:
             count_param += 1
-    print("Number of parameters that require gradient: ", count_param, flush=True)
-
-    loss_weights = {}
-    if pretrain:
-        loss_weights["a_loss_w"] = epoch / nr_epochs
-        loss_weights["t_loss_w"] = 5.0
-        loss_weights["c_loss_w"] = 0.0
-        loss_weights["u_loss_w"] = 0.5  # <- ignored
-    else:
-        loss_weights["a_loss_w"] = 5.0
-        loss_weights["t_loss_w"] = 2.0
-        loss_weights["c_loss_w"] = 2.0
-        loss_weights["u_loss_w"] = 0.0  # <- ignored
 
     print(
-        f"Align weight: {loss_weights['a_loss_w']}, ",
-        f"Tanh weight:  {loss_weights['a_loss_w']}, ",
-        f"Class weight: {loss_weights['c_loss_w']}",
+        f"Number of parameters that require gradient: {count_param}",
         flush=True,
     )
-    print("Pretrain?", pretrain, "Finetune?", finetune, flush=True)
 
-    lrs_net = []
-    lrs_class = []
-    # Iterate through the data set to update leaves, prototypes and network
-    for i, (x1, x2, y) in train_iter:
+    print(
+        f"Pretrain? {pretrain} Finetune? {finetune}",
+        flush=True,
+    )
 
+    # Store learning rates values;
+    lr_hist = {"backbone": [], "head": []}
+
+    # Train epoch loop;
+    for step_idx, (x1, x2, y) in train_iter:
         x1, x2, y = x1.to(device), x2.to(device), y.to(device)
+        loss_data = train_step_func(
+            forward_pass_func=forward_pass_func,
+            network=net,
+            x1=x1,
+            x2=x2,
+            targets=y,
+            loss_func=loss_func,
+            scaler=scaler,
+            head_optimizer=head_optimizer,
+            backbone_optimizer=backbone_optimizer,
+            device=device,
+            pretrain=pretrain,
+            finetune=finetune,
+        )
 
-        # Reset the gradients
-        optimizer_classifier.zero_grad(set_to_none=True)
-        optimizer_net.zero_grad(set_to_none=True)
+        # Print loss data;
+        loss_info = loss_func.loss_data_to_str(loss_data)
+        train_iter.set_postfix_str(
+            s=loss_info,
+            refresh=False,
+        )
 
-        # Perform a train step
-        with autocast():
-            if mode == "MATCH":
-                loss, acc = forward_train_rot_match(
-                    epoch=epoch,
-                    network=net,
-                    x1=x1,
-                    x2=x2,
-                    targets=y,
-                    loss_weights=loss_weights,
-                    pretrain=pretrain,
-                    finetune=finetune,
-                    criterion=criterion,
-                    train_iter=train_iter,
-                    device=device,
-                )
-            elif mode == "INV":
-                loss, acc = forward_train_rot_inv(
-                    epoch=epoch,
-                    network=net,
-                    x1=x1,
-                    x2=x2,
-                    targets=y,
-                    loss_weights=loss_weights,
-                    pretrain=pretrain,
-                    finetune=finetune,
-                    criterion=criterion,
-                    train_iter=train_iter,
-                    device=device,
-                )
-            else:
-                loss, acc = forward_train_plain(
-                    epoch=epoch,
-                    network=net,
-                    x1=x1,
-                    x2=x2,
-                    targets=y,
-                    loss_weights=loss_weights,
-                    pretrain=pretrain,
-                    finetune=finetune,
-                    criterion=criterion,
-                    train_iter=train_iter,
-                    device=device,
-                )
-
-        # Compute the gradient
-        scaler.scale(loss).backward()
-
-        # Optimize
+        # Set and save learning rates;
         if not pretrain:
-            scaler.step(optimizer_classifier)
-            scheduler_classifier.step(epoch - 1 + (i / iters))
-            lrs_class.append(scheduler_classifier.get_last_lr()[0])
+            head_scheduler.step(epoch_idx - 1 + (step_idx / num_steps))
+            lr_hist["head"].append(head_scheduler.get_last_lr()[0])
 
         if not finetune:
-            scaler.step(optimizer_net)
-            scheduler_net.step()
-            lrs_net.append(scheduler_net.get_last_lr()[0])
-        else:
-            lrs_net.append(0.)
+            backbone_scheduler.step()
+            lr_hist["backbone"].append(backbone_scheduler.get_last_lr()[0])
 
-        # Update gradient scaler
-        scaler.update()
-
+        # Aggregate metrics;
         with torch.no_grad():
-            total_acc += acc.item()
-            total_loss += loss.item()
+            total_acc += loss_data["acc"].item()
+            total_loss += loss_data["total_loss"].item()
 
+        # Clip classification parameters;
         if not pretrain:
-            with torch.no_grad():
-                net.module._classification.weight.copy_(
-                    torch.clamp(net.module._classification.weight.data - 1e-3, min=0.0)
-                )
-                net.module._classification.normalization_multiplier.copy_(
-                    torch.clamp(net.module._classification.normalization_multiplier.data, min=1.0)
-                )
-                if net.module._classification.bias is not None:
-                    net.module._classification.bias.copy_(
-                        torch.clamp(net.module._classification.bias.data, min=0.0)
-                    )
+            net.clip_class_params(
+                zero_small_weights=True,
+                clip_bias=True,
+                clip_norm_mul=True,
+                print_results=False,
+            )
 
-    train_info['train_accuracy'] = total_acc / float(i + 1)
-    train_info['loss'] = total_loss / float(i + 1)
-    train_info['lrs_net'] = lrs_net
-    train_info['lrs_class'] = lrs_class
-
+    train_info['train_accuracy'] = total_acc / float(step_idx + 1)
+    train_info['loss'] = total_loss / float(step_idx + 1)
+    train_info['lrs_net'] = lr_hist["backbone"]
+    train_info['lrs_class'] = lr_hist["head"]
     return train_info
 
-
-def calculate_loss(
-    mode: str,
-    proto_features: torch.Tensor,
-    pooled: torch.Tensor,
-    logits: torch.Tensor,
-    targets: torch.Tensor,
-    loss_mask: Optional[torch.Tensor],
-    loss_weights: Dict[str, float],
-    net_normalization_multiplier: float,
-    pretrain: bool,
-    finetune: bool,
-    criterion: Callable,
-    train_iter,
-    device: torch.device,
-    print: bool = True,
-    EPS: float = 1e-7,
-):
-    a_loss_w = loss_weights["a_loss_w"]
-    t_loss_w = loss_weights["t_loss_w"]
-    c_loss_w = loss_weights["c_loss_w"]
-
-    targets = torch.cat([targets, targets])
-    pooled1, pooled2 = pooled.chunk(2)
-    pf1, pf2 = proto_features.chunk(2)
-
-    # Calculate loss based on training mode;
-    loss = torch.tensor(0.0).to(device)
-    acc = torch.tensor(0.0).to(device)
-
-    a1_loss = align_loss(pf1, pf2.detach(), loss_mask, mode)
-    a2_loss = align_loss(pf2, pf1.detach(), loss_mask, mode)
-    a_loss = (a1_loss + a2_loss) / 2.0
-    t_loss = (tanh_loss(pooled1) + tanh_loss(pooled2)) / 2.0
-
-    if not finetune:
-        loss += a_loss_w * a_loss + t_loss_w * t_loss
-
-    if not pretrain:
-        c_loss = class_loss(
-            logits=logits,
-            targets=targets,
-            norm_mul=net_normalization_multiplier,
-            criterion=criterion,
-        )
-        loss += c_loss_w * c_loss
-        acc = class_accuracy(logits, targets)
-
-    if print:
-        with torch.no_grad():
-            relevant_scores = torch.relu(pooled - 0.1)
-            num_relevant_scores = torch.count_nonzero(relevant_scores, dim=1).float().mean().item()
-
-            if pretrain:
-                train_iter.set_postfix_str(
-                    f'L: {loss.item():.3f}, '
-                    f'LA:{a_loss.item():.2f}, '
-                    f'LT:{t_loss.item():.3f}, '
-                    f'num_scores>0.1:{num_relevant_scores:.1f}',
-                    refresh=False,
-                )
-            else:
-                train_iter.set_postfix_str(
-                    f'L:{loss.item():.3f}, '
-                    f'LC:{c_loss.item():.3f}, '
-                    f'LA:{a_loss.item():.2f}, '
-                    f'LT:{t_loss.item():.3f}, '
-                    f'num_scores>0.1:{num_relevant_scores:.1f}, '
-                    f'Ac:{acc:.3f}',
-                    refresh=False,
-                )
-    return loss, acc
-
-
-def align_loss(
-    z1: torch.Tensor,
-    z2: torch.Tensor,
-    mask: Optional[torch.Tensor],
-    mode: str = "PLAIN",
-    EPS: float = 1e-7,
-):
-    assert z1.shape == z2.shape
-    assert z2.requires_grad is False
-
-    if mode == "MATCH":
-        # Flatten H, W dims;
-        N, D, _, _ = z1.shape
-        z1 = z1.permute(0, 2, 3, 1).reshape(N, -1, D)
-        z2 = z2.permute(0, 2, 3, 1).reshape(N, -1, D)
-
-        # Calculate inner product;
-        x_inner = torch.bmm(z1, z2.transpose(1, 2))
-
-        # Calculate masked loss;
-        loss = -torch.log(x_inner + EPS)
-        loss *= mask
-        loss = loss.sum() / mask.sum()
-
-    elif mode == "INV":
-        # Flatten H, W dims;
-        N, D, _, _ = z1.shape
-        z1 = z1.permute(0, 2, 3, 1).reshape(N, -1, D)
-        z2 = z2.permute(0, 2, 3, 1).reshape(N, -1, D)
-        mask = mask.permute(0, 2, 3, 1).reshape(N, -1)
-
-        # Calculate inner product;
-        x_inner = torch.sum(z1 * z2, dim=2)
-
-        # Calculate masked loss;
-        loss = -torch.log(x_inner + EPS)
-        loss *= mask
-        loss = loss.sum() / mask.sum()
-
-    else:
-        # from https://gitlab.com/mipl/carl/-/blob/main/losses.py
-        z1 = z1.flatten(start_dim=2).permute(0, 2, 1).flatten(end_dim=1)
-        z2 = z2.flatten(start_dim=2).permute(0, 2, 1).flatten(end_dim=1)
-        loss = torch.einsum("nc,nc->n", [z1, z2])
-        loss = -torch.log(loss + EPS).mean()
-
-    return loss
-
-
-def tanh_loss(inputs: torch.Tensor, EPS: float = 1e-7):
-    loss = torch.tanh(torch.sum(inputs, dim=0))
-    loss = -torch.log(loss + EPS).mean()
-    return loss
-
-
-def class_loss(
-    logits: torch.Tensor,
-    targets: torch.Tensor,
-    norm_mul: float,
-    criterion: Callable,
-) -> torch.Tensor:
-    logits = torch.log1p(logits ** norm_mul)
-    y_pred = F.log_softmax(logits, dim=1)
-    return criterion(y_pred, targets)
-
-
-def class_accuracy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-    preds = torch.argmax(logits, dim=1)
-    correct = torch.sum(torch.eq(preds, targets))
-    return correct / float(len(targets))
-
-
-# Extra uniform loss from https://www.tongzhouwang.info/hypersphere/. Currently not used but you could try adding it if you want.
-def uniform_loss(x, t=2):
-    # print("sum elements: ", torch.sum(torch.pow(x,2), dim=1).shape, torch.sum(torch.pow(x,2), dim=1)) #--> should be ones
-    loss = (torch.pdist(x, p=2).pow(2).mul(-t).exp().mean() + 1e-10).log()
-    return loss
