@@ -15,10 +15,10 @@ def get_backbone_optimizer(
     Returns network backbone optimizer for pre-training and training phase.
     """
     backbone_params = [
-        {"params": network.get_params_backbone(), "lr": lr_backbone, "weight_decay_rate": weight_decay},
-        {"params": network.get_params_to_freeze(), "lr": lr_block, "weight_decay_rate": weight_decay},
-        {"params": network.get_params_to_train(), "lr": lr_block, "weight_decay_rate": weight_decay},
-        {"params": network.get_params_add_on(), "lr": lr_block * 10.0, "weight_decay_rate": weight_decay},
+        {"params": network.module.get_params_backbone(), "lr": lr_backbone, "weight_decay_rate": weight_decay},
+        {"params": network.module.get_params_to_freeze(), "lr": lr_block, "weight_decay_rate": weight_decay},
+        {"params": network.module.get_params_to_train(), "lr": lr_block, "weight_decay_rate": weight_decay},
+        {"params": network.module.get_params_add_on(), "lr": lr_block * 10.0, "weight_decay_rate": weight_decay},
     ]
 
     if optimizer_name != 'Adam':
@@ -42,8 +42,8 @@ def get_head_optimizer(
     Returns network head optimizer for training phase.
     """
     network.get_norm_mul().requires_grad = False
-    class_w = network.get_class_weight()
-    class_b = network.get_class_bias()
+    class_w = network.module.get_class_weight()
+    class_b = network.module.get_class_bias()
 
     class_w_params = [class_w]
     class_b_params = [class_b] if class_b is not None else []
