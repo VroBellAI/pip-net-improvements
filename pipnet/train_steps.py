@@ -303,7 +303,7 @@ def train_epoch(
     # Store info about the procedure
     train_info = dict()
     total_loss = 0.0
-    total_acc = 0.0
+    total_acc = 0.0 if not pretrain else None
     num_steps = len(train_loader)
 
     # Show progress on progress bar.
@@ -370,7 +370,9 @@ def train_epoch(
 
         # Aggregate metrics;
         with torch.no_grad():
-            total_acc += loss_data["acc"].item()
+            if not pretrain:
+                total_acc += loss_data["acc"].item()
+
             total_loss += loss_data["total_loss"].item()
 
         # Clip classification parameters;
