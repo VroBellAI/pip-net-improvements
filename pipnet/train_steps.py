@@ -158,8 +158,11 @@ def train_step_fp(
     Performs train step with Full Precision.
     """
     # Reset the gradients;
-    head_optimizer.zero_grad(set_to_none=True)
-    backbone_optimizer.zero_grad(set_to_none=True)
+    if not pretrain:
+        head_optimizer.zero_grad(set_to_none=True)
+
+    if not finetune:
+        backbone_optimizer.zero_grad(set_to_none=True)
 
     # Perform a train step;
     loss_data = forward_pass_func(
@@ -203,8 +206,11 @@ def train_step_amp(
     Performs train step with Automatic Mixed Precision.
     """
     # Reset the gradients;
-    head_optimizer.zero_grad(set_to_none=True)
-    backbone_optimizer.zero_grad(set_to_none=True)
+    if not pretrain:
+        head_optimizer.zero_grad(set_to_none=True)
+
+    if not finetune:
+        backbone_optimizer.zero_grad(set_to_none=True)
 
     # Perform a train step;
     with autocast():
