@@ -91,7 +91,7 @@ def run_pipnet(args: Namespace):
 
     # Pass num prototypes to arguments;
     # TODO: remove in the later refactor
-    args.wshape = pip_net.get_num_prototypes()
+    args.wshape = pip_net.module.get_num_prototypes()
     print(f"Output shape: {args.wshape}", flush=True)
 
     # Create logging file;
