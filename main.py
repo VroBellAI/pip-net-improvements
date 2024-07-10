@@ -84,7 +84,7 @@ def run_pipnet(args: Namespace):
     # Define loss function;
     loss_func = PIPNetLoss(
         aug_mode=args.train_mode,
-        class_norm_mul=pip_net.get_norm_mul(),
+        class_norm_mul=pip_net.module.get_norm_mul(),
         device=device,
         eps=1e-7 if args.mixed_precision else 1e-10,  # <- numerical stability constant;
     )

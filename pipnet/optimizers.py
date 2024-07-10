@@ -41,7 +41,7 @@ def get_head_optimizer(
     """
     Returns network head optimizer for training phase.
     """
-    network.get_norm_mul().requires_grad = False
+    network.module.get_norm_mul().requires_grad = False
     class_w = network.module.get_class_weight()
     class_b = network.module.get_class_bias()
 
