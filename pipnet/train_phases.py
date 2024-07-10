@@ -17,7 +17,7 @@ def manage_pretrain_gradients(network: PIPNet):
     for self-supervised pre-training phase.
     """
     connect_gradients(network.module.get_params_to_train())
-    connect_gradients(network.module.get_params_add_on())
+    connect_gradients(network.module.get_params_addon())
 
     # Can be set to disconnect when you want to freeze more layers;
     connect_gradients(network.module.get_params_to_freeze())
@@ -137,7 +137,7 @@ def manage_train_gradients(
 
     # Finetune config;
     if all(finetune_conditions):
-        disconnect_gradients(network.module.get_params_add_on())
+        disconnect_gradients(network.module.get_params_addon())
         disconnect_gradients(network.module.get_params_to_train())
         disconnect_gradients(network.module.get_params_to_freeze())
         disconnect_gradients(network.module.get_params_backbone())
@@ -152,7 +152,7 @@ def manage_train_gradients(
 
     # Unfreeze backbone;
     if epoch > freeze_epochs:
-        connect_gradients(network.module.get_params_add_on())
+        connect_gradients(network.module.get_params_addon())
         connect_gradients(network.module.get_params_to_freeze())
         connect_gradients(network.module.get_params_to_train())
         connect_gradients(network.module.get_params_backbone())
@@ -163,7 +163,7 @@ def manage_train_gradients(
     # Freeze first layers of backbone, train rest;
     # Can be disconnected if you want to train fewer layers of backbone;
     connect_gradients(network.module.get_params_to_freeze())
-    connect_gradients(network.module.get_params_add_on())
+    connect_gradients(network.module.get_params_addon())
     connect_gradients(network.module.get_params_to_train())
     disconnect_gradients(network.module.get_params_backbone())
     # TODO: is it redundant?
