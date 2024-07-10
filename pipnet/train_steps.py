@@ -4,7 +4,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 
-from pipnet import PIPNet
+from pipnet.pipnet import PIPNet
 from pipnet.loss import PIPNetLoss, LOSS_DATA
 from pipnet.affine_ops import (
     affine,
