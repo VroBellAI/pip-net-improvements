@@ -3,7 +3,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from typing import Tuple
 
-from pipnet import save_pipnet, PIPNet
+from pipnet.pipnet import save_pipnet, PIPNet
 from pipnet.loss import PIPNetLoss
 from pipnet.train_steps import train_epoch
 from pipnet.test import eval_pipnet
