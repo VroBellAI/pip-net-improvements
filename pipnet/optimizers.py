@@ -15,10 +15,10 @@ def get_backbone_optimizer(
     Returns network backbone optimizer for pre-training and training phase.
     """
     backbone_params = [
-        {"params": network.params_backbone, "lr": lr_backbone, "weight_decay_rate": weight_decay},
-        {"params": network.params_to_freeze, "lr": lr_block, "weight_decay_rate": weight_decay},
-        {"params": network.params_to_train, "lr": lr_block, "weight_decay_rate": weight_decay},
-        {"params": network.params_add_on, "lr": lr_block * 10.0, "weight_decay_rate": weight_decay},
+        {"params": network.get_params_backbone(), "lr": lr_backbone, "weight_decay_rate": weight_decay},
+        {"params": network.get_params_to_freeze(), "lr": lr_block, "weight_decay_rate": weight_decay},
+        {"params": network.get_params_to_train(), "lr": lr_block, "weight_decay_rate": weight_decay},
+        {"params": network.get_params_add_on(), "lr": lr_block * 10.0, "weight_decay_rate": weight_decay},
     ]
 
     if optimizer_name != 'Adam':

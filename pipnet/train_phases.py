@@ -16,18 +16,18 @@ def manage_pretrain_gradients(network: PIPNet):
     Connects/disconnects params gradients
     for self-supervised pre-training phase.
     """
-    connect_gradients(network.params_to_train)
-    connect_gradients(network.params_add_on)
+    connect_gradients(network.get_params_to_train())
+    connect_gradients(network.get_params_add_on())
 
     # Can be set to disconnect when you want to freeze more layers;
-    connect_gradients(network.params_to_freeze)
+    connect_gradients(network.get_params_to_freeze())
 
     # Can be set to connect when you want to train whole backbone
     # (e.g. if dataset is very different from ImageNet);
-    disconnect_gradients(network.params_backbone)
+    disconnect_gradients(network.get_params_backbone())
 
     # Disable training of classification layer;
-    disconnect_gradients(network.params_classifier)
+    disconnect_gradients(network.get_params_classifier())
 
     # TODO: redundant?
     network.module._classification.requires_grad = False
@@ -137,10 +137,10 @@ def manage_train_gradients(
 
     # Finetune config;
     if all(finetune_conditions):
-        disconnect_gradients(network.params_add_on)
-        disconnect_gradients(network.params_to_train)
-        disconnect_gradients(network.params_to_freeze)
-        disconnect_gradients(network.params_backbone)
+        disconnect_gradients(network.get_params_add_on())
+        disconnect_gradients(network.get_params_to_train())
+        disconnect_gradients(network.get_params_to_freeze())
+        disconnect_gradients(network.get_params_backbone())
         # TODO: is it redundant?
         network.module._classification.requires_grad = True
         return frozen, True
@@ -152,20 +152,20 @@ def manage_train_gradients(
 
     # Unfreeze backbone;
     if epoch > freeze_epochs:
-        connect_gradients(network.params_add_on)
-        connect_gradients(network.params_to_freeze)
-        connect_gradients(network.params_to_train)
-        connect_gradients(network.params_backbone)
+        connect_gradients(network.get_params_add_on())
+        connect_gradients(network.get_params_to_freeze())
+        connect_gradients(network.get_params_to_train())
+        connect_gradients(network.get_params_backbone())
         # TODO: is it redundant?
         network.module._classification.requires_grad = True
         return False, False
 
     # Freeze first layers of backbone, train rest;
     # Can be disconnected if you want to train fewer layers of backbone;
-    connect_gradients(network.params_to_freeze)
-    connect_gradients(network.params_add_on)
-    connect_gradients(network.params_to_train)
-    disconnect_gradients(network.params_backbone)
+    connect_gradients(network.get_params_to_freeze())
+    connect_gradients(network.get_params_add_on())
+    connect_gradients(network.get_params_to_train())
+    disconnect_gradients(network.get_params_backbone())
     # TODO: is it redundant?
     network.module._classification.requires_grad = True
     return True, False

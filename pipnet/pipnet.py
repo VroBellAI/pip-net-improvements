@@ -44,8 +44,6 @@ class PIPNet(nn.Module):
         self.params_to_train = []
         self.params_to_freeze = []
         self.params_backbone = []
-        self.params_add_on = self._add_on.parameters()
-        self.params_classifier = self._classification.parameters()
         self.group_parameters()
 
     def forward(self, x: torch.Tensor, inference: bool = False):
@@ -61,6 +59,21 @@ class PIPNet(nn.Module):
         # Out shape: (bs*2, num_classes)
         out = self._classification(pooled)
         return proto_features, pooled, out
+
+    def get_params_to_train(self) -> List[nn.Parameter]:
+        return self.params_to_train
+
+    def get_params_to_freeze(self) -> List[nn.Parameter]:
+        return self.params_to_freeze
+
+    def get_params_backbone(self) -> List[nn.Parameter]:
+        return self.params_backbone
+
+    def get_params_addon(self) -> List[nn.Parameter]:
+        return self._add_on.parameters()
+
+    def get_params_classifier(self) -> List[nn.Parameter]:
+        return self._classification.parameters()
 
     def get_class_weight(self) -> torch.Tensor:
         return self._classification.weight
