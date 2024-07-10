@@ -63,42 +63,42 @@ class PIPNet(nn.Module):
         return proto_features, pooled, out
 
     def get_class_weight(self) -> torch.Tensor:
-        return self.module._classification.weight
+        return self._classification.weight
 
     @torch.no_grad()
     def set_class_weight(self, w: torch.Tensor):
-        self.module._classification.weight.copy_(w)
+        self._classification.weight.copy_(w)
 
     def get_class_bias(self) -> torch.Tensor:
-        return self.module._classification.bias
+        return self._classification.bias
 
     @torch.no_grad()
     def set_class_bias(self, b: torch.Tensor):
-        self.module._classification.bias.copy_(b)
+        self._classification.bias.copy_(b)
 
     def get_norm_mul(self) -> torch.Tensor:
-        return self.module._classification.normalization_multiplier
+        return self._classification.normalization_multiplier
 
     @torch.no_grad()
     def set_norm_mul(self, norm_mul: torch.Tensor):
-        self.module._classification.normalization_multiplier.copy_(norm_mul)
+        self._classification.normalization_multiplier.copy_(norm_mul)
 
     @torch.no_grad()
     def get_nonzero_class_weight(self) -> torch.Tensor:
-        class_w = self.self.module._classification.weight
+        class_w = self._classification.weight
         return class_w[class_w.nonzero(as_tuple=True)]
 
     def get_num_prototypes(self) -> int:
-        return self.module._num_prototypes
+        return self._num_prototypes
 
     def get_num_classes(self) -> int:
-        return self.module._num_classes
+        return self._num_classes
 
     def group_parameters(self):
         # set up optimizer
         if 'resnet50' in self._arch_name:
             # freeze resnet50 except last convolutional layer
-            for name, param in self.module._net.named_parameters():
+            for name, param in self._net.named_parameters():
                 if 'layer4.2' in name:
                     self.params_to_train.append(param)
                 elif 'layer4' in name or 'layer3' in name:
@@ -113,7 +113,7 @@ class PIPNet(nn.Module):
 
         if 'convnext' in self._arch_name:
             print("chosen network is convnext", flush=True)
-            for name, param in self.module._net.named_parameters():
+            for name, param in self._net.named_parameters():
                 if 'features.7.2' in name:
                     self.params_to_train.append(param)
                 elif 'features.7' in name or 'features.6' in name:
