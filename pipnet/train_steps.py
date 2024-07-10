@@ -277,8 +277,11 @@ def train_epoch(
     Returns train info:
     loss value, accuracy value, learning rates.
     """
-    # Extract selected augmentation mode;
+    # Extract training mode data;
     aug_mode = loss_func.aug_mode
+    pretrain = loss_func.pretrain
+    finetune = loss_func.finetune
+
     print(f"Training aug mode: {aug_mode}")
     print(f"Device: {device}")
 
