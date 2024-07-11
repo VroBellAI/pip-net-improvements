@@ -232,22 +232,22 @@ class PIPNetLoss(torch.nn.Module):
         loss_str = ""
 
         if "total_loss" in loss_data:
-            loss_str += f"L:{loss_data['total_loss'].item()} "
+            loss_str += f"L:{loss_data['total_loss'].item():.3f} "
 
         if "c_loss" in loss_data:
-            loss_str += f"LC:{loss_data['c_loss'].item()} "
+            loss_str += f"LC:{loss_data['c_loss'].item():.3f} "
 
         if "a_loss" in loss_data:
-            loss_str += f"LA:{loss_data['a_loss'].item()} "
+            loss_str += f"LA:{loss_data['a_loss'].item():.2f} "
 
         if "t_loss" in loss_data:
-            loss_str += f"LT:{loss_data['t_loss'].item()} "
+            loss_str += f"LT:{loss_data['t_loss'].item():.3f} "
 
         if "num_relevant_scores" in loss_data:
             loss_str += (f"num_scores>{self.relevant_score_thresh}:"
-                         f"{loss_data['num_relevant_scores'].item()} ")
+                         f"{loss_data['num_relevant_scores'].item():.1f} ")
 
         if "acc" in loss_data:
-            loss_str += f"Ac:{loss_data['acc']}"
+            loss_str += f"Ac:{loss_data['acc'].item():.3f}"
 
         return loss_str
