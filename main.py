@@ -34,6 +34,9 @@ from util.visualize_prediction import visualize_all
 
 
 def run_pipnet(args: Namespace):
+    # Set seed;
+    set_random_seed(args.seed)
+
     # Create Logger;
     logger = Logger(args.log_dir)
     save_args(args, logger.metadata_dir)
@@ -57,6 +60,7 @@ def run_pipnet(args: Namespace):
     pip_net = torch.nn.DataParallel(pip_net, device_ids=device_ids)
 
     # Initialize optimizer & scheduler;
+    set_random_seed(args.seed)  # <- reset seed as in the original repo;
     backbone_optimizer = get_backbone_optimizer(
         optimizer_name=args.optimizer,
         network=pip_net,
@@ -122,6 +126,7 @@ def run_pipnet(args: Namespace):
         )
 
     # Initialize optimizers and schedulers for second training phase;
+    set_random_seed(args.seed)  # <- reset seed as in the original repo;
     backbone_optimizer = get_backbone_optimizer(
         optimizer_name=args.optimizer,
         network=pip_net,
@@ -247,7 +252,6 @@ def run_pipnet(args: Namespace):
 
 if __name__ == '__main__':
     args = get_args()
-    set_random_seed(args.seed)
 
     # Set output filepaths;
     print_dir = os.path.join(args.log_dir, 'out.txt')
