@@ -338,7 +338,7 @@ def metric_data_to_str(metrics_data: Dict[str, torch.Tensor]) -> str:
     metrics_info = ""
 
     for metric in metrics_data:
-        metrics_info += f"{metric}: {metrics_data[metric].item():.3f}"
+        metrics_info += f"{metric}: {metrics_data[metric].item():.3f} | "
 
     return metrics_info
 
