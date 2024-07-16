@@ -73,7 +73,7 @@ def run_pipnet(args: Namespace):
     backbone_scheduler = get_backbone_scheduler(
         backbone_optimizer=backbone_optimizer,
         num_epochs=args.epochs_pretrain,
-        num_steps_per_epoch=len(loaders["pre_train"]),
+        num_steps_per_epoch=len(loaders["pretrain"]),
         eta_min=args.lr_block / 100.0,
     )
 
