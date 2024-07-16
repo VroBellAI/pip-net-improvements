@@ -272,9 +272,8 @@ class WeightedSumLoss(torch.nn.Module):
         loss_data["total_loss"] = total_loss
 
         # Aggregate result;
-        with torch.no_grad:
-            self.summed_val += total_loss
-            self.num_steps += 1
+        self.summed_val += total_loss.detach()
+        self.num_steps += 1
 
         return loss_data
 
