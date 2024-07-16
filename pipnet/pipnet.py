@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import Optimizer
 from features.resnet_features import (
     resnet18_features,
     resnet34_features,
@@ -15,6 +16,22 @@ from features.convnext_features import (
     convnext_tiny_13_features,
 )
 from typing import List, Dict, Optional
+
+
+class PIPNetOutput:
+    def __init__(
+        self,
+        proto_feature_map: torch.Tensor,
+        proto_feature_vec: torch.Tensor,
+        logits: torch.Tensor,
+        pre_softmax: torch.Tensor,
+        softmax_out: torch.Tensor,
+    ):
+        self.proto_feature_map = proto_feature_map
+        self.proto_feature_vec = proto_feature_vec
+        self.logits = logits
+        self.pre_softmax = pre_softmax
+        self.softmax_out = softmax_out
 
 
 class PIPNet(nn.Module):
@@ -44,9 +61,11 @@ class PIPNet(nn.Module):
         self.params_to_train = []
         self.params_to_freeze = []
         self.params_backbone = []
+        self.params_classifier = self._classification.parameters()
+        self.params_addon = self._add_on.parameters()
         self.group_parameters()
 
-    def forward(self, x: torch.Tensor, inference: bool = False):
+    def forward(self, x: torch.Tensor, inference: bool = False) -> PIPNetOutput:
         features = self._net(x)
         proto_features = self._add_on(features)
         pooled = self._pool(proto_features)
@@ -56,24 +75,18 @@ class PIPNet(nn.Module):
             # that have 0.1 similarity or lower;
             pooled = torch.where(pooled < 0.1, 0.0, pooled)
 
-        # Out shape: (bs*2, num_classes)
-        out = self._classification(pooled)
-        return proto_features, pooled, out
+        logits = self._classification(pooled)
+        pre_softmax = torch.log1p(logits ** self._multiplier)
+        softmax_out = F.softmax(pre_softmax, dim=1)
 
-    def get_params_to_train(self) -> List[nn.Parameter]:
-        return self.params_to_train
-
-    def get_params_to_freeze(self) -> List[nn.Parameter]:
-        return self.params_to_freeze
-
-    def get_params_backbone(self) -> List[nn.Parameter]:
-        return self.params_backbone
-
-    def get_params_addon(self) -> List[nn.Parameter]:
-        return self._add_on.parameters()
-
-    def get_params_classifier(self) -> List[nn.Parameter]:
-        return self._classification.parameters()
+        result = PIPNetOutput(
+            proto_feature_map=proto_features,
+            proto_feature_vec=pooled,
+            logits=logits,
+            pre_softmax=pre_softmax,
+            softmax_out=softmax_out,
+        )
+        return result
 
     def get_class_weight(self) -> torch.Tensor:
         return self._classification.weight
@@ -108,6 +121,7 @@ class PIPNet(nn.Module):
         return self._num_classes
 
     def group_parameters(self):
+        # TODO: Iterators instead of lists...
         # set up optimizer
         if 'resnet50' in self._arch_name:
             # freeze resnet50 except last convolutional layer
@@ -223,6 +237,13 @@ class PIPNet(nn.Module):
                     zeroed_proto_idxs.append(proto_idx)
 
         return zeroed_proto_idxs
+
+    def count_gradient_params(self) -> int:
+        grad_param_count = 0
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                grad_param_count += 1
+        return grad_param_count
 
 
 base_architecture_to_features = {
@@ -366,8 +387,7 @@ def save_pipnet(
     log_dir: str,
     checkpoint_name: str,
     network: torch.nn.Module,
-    backbone_optimizer: Optional[torch.optim.Optimizer] = None,
-    head_optimizer: Optional[torch.optim.Optimizer] = None,
+    optimizers: Dict[str, Optimizer],
 ):
     checkpoints_dir = os.path.join(log_dir, 'checkpoints')
     save_dir = os.path.join(checkpoints_dir, checkpoint_name)
@@ -375,11 +395,8 @@ def save_pipnet(
     network.eval()
     state_dict = {'model_state_dict': network.state_dict()}
 
-    if backbone_optimizer is not None:
-        state_dict['optimizer_net_state_dict'] = backbone_optimizer.state_dict()
-
-    if head_optimizer is not None:
-        state_dict['optimizer_classifier_state_dict'] = head_optimizer.state_dict()
+    for opt_name, opt in optimizers.items():
+        state_dict[opt_name] = opt.state_dict()
 
     torch.save(state_dict, save_dir)
     network.train()

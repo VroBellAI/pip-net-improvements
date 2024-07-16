@@ -181,13 +181,14 @@ def get_dataloaders(args: argparse.Namespace, device):
     loaders = {
         "train": trainloader,
         "test": testloader,
-        "pre_train": trainloader_pretraining,
+        "pretrain": trainloader_pretraining,
         "project": projectloader,
         "test_project": test_projectloader,
         "train_normal": trainloader_normal,
         "train_normal_aug": trainloader_normal_augment,
     }
     return loaders, classes
+
 
 def create_datasets(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     

@@ -4,169 +4,98 @@ import numpy as np
 import torch
 import torch.optim
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from util.logger import Logger
-from util.func import topk_accuracy
 from util.data import get_dataloaders
-from sklearn.metrics import roc_auc_score, balanced_accuracy_score, f1_score
-from util.eval_cub_csv import eval_prototypes_cub_parts_csv, get_topk_cub, get_proto_patches_cub
+from util.eval_cub_csv import (
+    eval_prototypes_cub_parts_csv,
+    get_topk_cub,
+    get_proto_patches_cub,
+)
 from argparse import Namespace
 from copy import deepcopy
-from typing import List, Dict, Optional
+from typing import List, Dict, Union
+
+from pipnet.pipnet import PIPNet
+from metrics import (
+    Metric,
+    NumAbstainedPredictions,
+    NumInDistribution,
+    metric_data_to_str,
+)
+
+
+# TODO: LOGGER calls!!!
+@torch.no_grad()
+def test_step(
+    network: PIPNet,
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    metrics: List[Metric],
+) -> Dict[str, torch.Tensor]:
+
+    # Predict inputs;
+    model_output = network(inputs, inference=True)
+
+    metrics_data = {
+        metric.name: metric(
+            model_output=model_output,
+            targets=targets,
+            network=network,
+        )
+        for metric in metrics
+    }
+    return metrics_data
 
 
 @torch.no_grad()
-def eval_pipnet(
-    net,
+def evaluate_pipnet(
+    network: PIPNet,
     test_loader: DataLoader,
-    epoch,
-    device,
-    log: Logger = None,
-    progress_prefix: str = 'Eval Epoch',
-    train_info: Optional[Dict[str, float]] = None,
+    metrics: List[Metric],
+    epoch_idx: int,
+    device: torch.device,
+    phase: str = "evaluation"
 ):
     
-    net = net.to(device)
-    # Make sure the model is in evaluation mode
-    net.eval()
-    # Keep an info dict about the procedure
-    info = dict()
-    train_info = dict() if train_info is None else train_info
-    # Build a confusion matrix
-    cm = np.zeros((net.module._num_classes, net.module._num_classes), dtype=int)
+    # Make sure the model is in evaluation mode;
+    network.eval()
 
-    global_top1acc = 0.
-    global_top5acc = 0.
-    global_sim_anz = 0.
-    global_anz = 0.
-    local_size_total = 0.
-    y_trues = []
-    y_preds = []
-    y_preds_classes = []
-    abstained = 0
+    # Reset metrics aggregation;
+    [metric.reset() for metric in metrics]
+
     # Show progress on progress bar
-    test_iter = tqdm(enumerate(test_loader),
-                        total=len(test_loader),
-                        desc=progress_prefix+' %s'%epoch,
-                        mininterval=5.,
-                        ncols=0)
-    (xs, ys) = next(iter(test_loader))
-    # Iterate through the test set
-    for i, (xs, ys) in test_iter:
-        xs, ys = xs.to(device), ys.to(device)
-        
-        with torch.no_grad():
-            net.module._classification.weight.copy_(torch.clamp(net.module._classification.weight.data - 1e-3, min=0.)) 
-            # Use the model to classify this batch of input data
-            _, pooled, out = net(xs, inference=True)
-            max_out_score, ys_pred = torch.max(out, dim=1)
-            ys_pred_scores = torch.amax(F.softmax((torch.log1p(out**net.module._classification.normalization_multiplier)),dim=1),dim=1)
-            abstained += (max_out_score.shape[0] - torch.count_nonzero(max_out_score))
-            repeated_weight = net.module._classification.weight.unsqueeze(1).repeat(1,pooled.shape[0],1)
-            sim_scores_anz = torch.count_nonzero(torch.gt(torch.abs(pooled*repeated_weight), 1e-3).float(),dim=2).float()
-            local_size = torch.count_nonzero(torch.gt(torch.relu((pooled*repeated_weight)-1e-3).sum(dim=1), 0.).float(),dim=1).float()
-            local_size_total += local_size.sum().item()
-
-            
-            correct_class_sim_scores_anz = torch.diagonal(torch.index_select(sim_scores_anz, dim=0, index=ys_pred),0)
-            global_sim_anz += correct_class_sim_scores_anz.sum().item()
-            
-            almost_nz = torch.count_nonzero(torch.gt(torch.abs(pooled), 1e-3).float(),dim=1).float()
-            global_anz += almost_nz.sum().item()
-            
-            # Update the confusion matrix
-            cm_batch = np.zeros((net.module._num_classes, net.module._num_classes), dtype=int)
-            for y_pred, y_true in zip(ys_pred, ys):
-                cm[y_true][y_pred] += 1
-                cm_batch[y_true][y_pred] += 1
-            acc = acc_from_cm(cm_batch)
-            test_iter.set_postfix_str(
-                f'SimANZCC: {correct_class_sim_scores_anz.mean().item():.2f}, ANZ: {almost_nz.mean().item():.1f}, LocS: {local_size.mean().item():.1f}, Acc: {acc:.3f}', refresh=False
-            )    
-
-            (top1accs, top5accs) = topk_accuracy(out, ys, topk=[1,5])
-            
-            global_top1acc+=torch.sum(top1accs).item()
-            global_top5acc+=torch.sum(top5accs).item()
-            y_preds += ys_pred_scores.detach().tolist()
-            y_trues += ys.detach().tolist()
-            y_preds_classes += ys_pred.detach().tolist()
-        
-        del out
-        del pooled
-        del ys_pred
-        
-    print("PIP-Net abstained from a decision for", abstained.item(), "images", flush=True)            
-    info['num non-zero prototypes'] = torch.gt(net.module._classification.weight,1e-3).any(dim=0).sum().item()
-    print("sparsity ratio: ", (torch.numel(net.module._classification.weight)-torch.count_nonzero(torch.nn.functional.relu(net.module._classification.weight-1e-3)).item()) / torch.numel(net.module._classification.weight), flush=True)
-    info['confusion_matrix'] = cm
-    info['test_accuracy'] = acc_from_cm(cm)
-    info['top1_accuracy'] = global_top1acc/len(test_loader.dataset)
-    info['top5_accuracy'] = global_top5acc/len(test_loader.dataset)
-    info['almost_sim_nonzeros'] = global_sim_anz/len(test_loader.dataset)
-    info['local_size_all_classes'] = local_size_total / len(test_loader.dataset)
-    info['almost_nonzeros'] = global_anz/len(test_loader.dataset)
-
-    if net.module._num_classes == 2:
-        tp = cm[0][0]
-        fn = cm[0][1]
-        fp = cm[1][0]
-        tn = cm[1][1]
-        print("TP: ", tp, "FN: ",fn, "FP:", fp, "TN:", tn, flush=True)
-        sensitivity = tp/(tp+fn)
-        specificity = tn/(tn+fp)
-        print("\n Epoch",epoch, flush=True)
-        print("Confusion matrix: ", cm, flush=True)
-        try:
-            for classname, classidx in test_loader.dataset.class_to_idx.items(): 
-                if classidx == 0:
-                    print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
-                elif classidx == 1:
-                    print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
-        except ValueError:
-            pass
-        print("Balanced accuracy: ", balanced_accuracy_score(y_trues, y_preds_classes),flush=True)
-        print("Sensitivity: ", sensitivity, "Specificity: ", specificity,flush=True)
-        info['top5_accuracy'] = f1_score(y_trues, y_preds_classes)
-        try:
-            print("AUC macro: ", roc_auc_score(y_trues, y_preds, average='macro'), flush=True)
-            print("AUC weighted: ", roc_auc_score(y_trues, y_preds, average='weighted'), flush=True)
-        except ValueError:
-            pass
-    else:
-        info['top5_accuracy'] = global_top5acc/len(test_loader.dataset)
-
-    log.log_values(
-        'log_epoch_overview',
-        epoch,
-        info['top1_accuracy'],
-        info['top5_accuracy'],
-        info['almost_sim_nonzeros'],
-        info['local_size_all_classes'],
-        info['almost_nonzeros'],
-        info['num non-zero prototypes'],
-        train_info.get('train_accuracy', 'n.a.'),
-        train_info.get('loss', 'n.a.'),
+    test_iter = tqdm(
+        enumerate(test_loader),
+        total=len(test_loader),
+        desc=f"{phase} ep{epoch_idx}",
+        mininterval=5.0,
+        ncols=0,
     )
 
+    # Evaluation loop;
+    for step_idx, (x, y) in test_iter:
+        x, y = x.to(device), y.to(device)
 
-def acc_from_cm(cm: np.ndarray) -> float:
-    """
-    Compute the accuracy from the confusion matrix
-    :param cm: confusion matrix
-    :return: the accuracy score
-    """
-    assert len(cm.shape) == 2 and cm.shape[0] == cm.shape[1]
+        step_info = test_step(
+            network=network,
+            inputs=x,
+            targets=y,
+            metrics=metrics,
+        )
 
-    correct = 0
-    for i in range(len(cm)):
-        correct += cm[i, i]
+        # Print metrics data;
+        test_iter.set_postfix_str(
+            s=metric_data_to_str(step_info),
+            refresh=False,
+        )
 
-    total = np.sum(cm)
-    if total == 0:
-        return 1
-    else:
-        return correct / total
+    # Save aggregated metrics;
+    test_info = {}
+
+    for metric in metrics:
+        test_info[metric.name] = metric.get_aggregated_value()
+
+    return test_info
 
 
 @torch.no_grad()
@@ -196,7 +125,7 @@ def get_thresholds(net,
                         desc=progress_prefix+' %s Perc %s'%(epoch,percentile),
                         mininterval=5.,
                         ncols=0)
-    (xs, ys) = next(iter(test_loader))
+
     # Iterate through the test set
     for i, (xs, ys) in test_iter:
         xs, ys = xs.to(device), ys.to(device)
@@ -260,58 +189,162 @@ def get_thresholds(net,
 
     return overall_correct_threshold, overall_threshold, correct_class_thresholds, class_thresholds
 
-@torch.no_grad()
-def eval_ood(net,
-        test_loader: DataLoader,
-        epoch,
-        device,
-        threshold, #class specific threshold or overall threshold. single float is overall, list or dict is class specific 
-        progress_prefix: str = 'Get Thresholds Epoch'
-        ) -> dict:
-    
-    net = net.to(device)
-    # Make sure the model is in evaluation mode
-    net.eval()   
- 
-    predicted_as_id = 0
-    seen = 0.
-    abstained = 0
-    # Show progress on progress bar
-    test_iter = tqdm(enumerate(test_loader),
-                        total=len(test_loader),
-                        desc=progress_prefix+' %s'%epoch,
-                        mininterval=5.,
-                        ncols=0)
-    (xs, ys) = next(iter(test_loader))
-    # Iterate through the test set
-    for i, (xs, ys) in test_iter:
-        xs, ys = xs.to(device), ys.to(device)
-        
-        with torch.no_grad():
-            # Use the model to classify this batch of input data
-            _, pooled, out = net(xs)
-            max_out_score, ys_pred = torch.max(out, dim=1)
-            ys_pred = torch.argmax(out, dim=1)
-            abstained += (max_out_score.shape[0] - torch.count_nonzero(max_out_score))
-            for j in range(len(ys_pred)):
-                seen+=1.
-                if isinstance(threshold, dict):
-                    thresholdj = threshold[ys_pred[j].item()]
-                elif isinstance(threshold, float): #overall threshold
-                    thresholdj = threshold
-                else:
-                    raise ValueError("provided threshold should be float or dict", type(threshold))
-                sample_out = out[j,:]
-                
-                if sample_out.max().item() >= thresholdj:
-                    predicted_as_id += 1
-                    
-            del out
-            del pooled
-            del ys_pred
-    print("Samples seen:", seen, "of which predicted as In-Distribution:", predicted_as_id, flush=True)
-    print("PIP-Net abstained from a decision for", abstained.item(), "images", flush=True)
-    return predicted_as_id/seen
+
+def get_in_distribution_fraction(
+    network: PIPNet,
+    test_loader: DataLoader,
+    epoch: int,
+    device: torch.device,
+    threshold: Union[float, Dict],
+) -> float:
+
+    abstained_metric = NumAbstainedPredictions(aggregation="sum")
+    id_metric = NumInDistribution(threshold=threshold, aggregation="sum")
+
+    evaluate_pipnet(
+        network=network,
+        test_loader=test_loader,
+        metrics=[abstained_metric, id_metric],
+        epoch_idx=epoch,
+        device=device,
+        phase="ood_evaluation"
+    )
+
+    num_samples = len(test_loader) * test_loader.batch_size
+    num_abstained = abstained_metric.get_aggregated_value().item()
+    num_id_samples = id_metric.get_aggregated_value().item()
+
+    print(
+        f"Samples seen: {num_samples}, "
+        f"of which predicted as In-Distribution: {num_id_samples}",
+        flush=True,
+    )
+    print(
+        f"PIP-Net abstained from a decision for {num_abstained} images",
+        flush=True,
+    )
+    return num_id_samples/num_samples
+
+
+def evaluate_ood_detection(
+    epoch: int,
+    network: PIPNet,
+    test_data_loader: DataLoader,
+    ood_datasets: List[str],
+    percentile: float,
+    log: Logger,
+    args: Namespace,
+    device: torch.device,
+):
+
+    print(
+        f"OOD Evaluation for epoch {epoch}, "
+        f"with percent of {percentile}",
+        flush=True,
+    )
+    _, _, _, class_thresholds = get_thresholds(
+        net=network,
+        test_loader=test_data_loader,
+        epoch=epoch,
+        device=device,
+        percentile=percentile,
+        log=log,
+    )
+    print(f"Thresholds: {class_thresholds}", flush=True)
+
+    # Evaluate with in-distribution data;
+    id_fraction = get_in_distribution_fraction(
+        network=network,
+        test_loader=test_data_loader,
+        epoch=epoch,
+        device=device,
+        threshold=class_thresholds,
+    )
+    print(
+        f"ID class threshold ID fraction (TPR) "
+        f"with percent {percentile}: {id_fraction}",
+        flush=True,
+    )
+
+    # Evaluate with out-of-distribution data;
+    for ood_dataset in ood_datasets:
+        # Omit used dataset;
+        if ood_dataset == args.dataset:
+            continue
+
+        print(f"OOD dataset: {ood_dataset}", flush=True)
+        ood_args = deepcopy(args)
+        ood_args.dataset = ood_dataset
+        loaders, _ = get_dataloaders(ood_args, device)
+
+        id_fraction = get_in_distribution_fraction(
+            network=network,
+            test_loader=loaders["test"],
+            epoch=epoch,
+            device=device,
+            threshold=class_thresholds,
+        )
+        print(
+            f"{args.dataset} - OOD {ood_dataset} class threshold ID fraction (FPR) "
+            f"with percent {percentile}: {id_fraction}",
+            flush=True,
+        )
+
+
+def display_proto_data(
+    network: PIPNet,
+    data_loader: DataLoader,
+    validation_size: float,
+):
+
+    head_mtrx = network.module.get_class_weight()
+    head_mtrx_non_zero = head_mtrx[head_mtrx.nonzero(as_tuple=True)]
+    head_bias = network.module.get_class_bias()
+
+    # Print prototypes data;
+    print(
+        f"Classifier weights:"
+        f"{head_mtrx}"
+        f"{head_mtrx.shape}",
+        flush=True,
+    )
+    print(
+        f"Classifier weights nonzero:"
+        f"{head_mtrx_non_zero}"
+        f"{head_mtrx_non_zero.shape}",
+        flush=True,
+    )
+
+    if head_bias is not None:
+        print(
+            f"Classifier bias:"
+            f"{head_bias}"
+            f"{head_bias.shape}",
+            flush=True,
+        )
+
+    # Print weights and relevant prototypes per class;
+    class_names = list(data_loader.dataset.class_to_idx.keys())
+    class_idxs = list(data_loader.dataset.class_to_idx.values())
+
+    num_classes, num_prototypes = head_mtrx.shape
+    for c_idx in range(num_classes):
+        relevant_ps = []
+        proto_weights = head_mtrx[c_idx, :]
+
+        for p_idx in range(num_prototypes):
+            if proto_weights[p_idx] > 1e-3:
+                relevant_ps.append((p_idx, proto_weights[p_idx].item()))
+
+        if validation_size != 0.0:
+            continue
+
+        print(
+            f"Class {c_idx}"
+            f"({class_names[class_idxs.index(c_idx)]}):"
+            f"has {len(relevant_ps)} relevant prototypes: {relevant_ps}",
+            flush=True,
+        )
 
 
 def evaluate_prototype_purity(
@@ -406,118 +439,3 @@ def evaluate_prototype_purity(
         args=args,
         log=log,
     )
-
-
-def evaluate_ood_detection(
-    epoch: int,
-    network: torch.nn.Module,
-    test_data_loader,
-    ood_datasets: List[str],
-    percentile: float,
-    log: Logger,
-    args: Namespace,
-    device: torch.device,
-):
-
-    print(
-        f"OOD Evaluation for epoch {epoch}, "
-        f"with percent of {percentile}",
-        flush=True,
-    )
-    _, _, _, class_thresholds = get_thresholds(
-        net=network,
-        test_loader=test_data_loader,
-        epoch=epoch,
-        device=device,
-        percentile=percentile,
-        log=log,
-    )
-    print(f"Thresholds: {class_thresholds}", flush=True)
-
-    # Evaluate with in-distribution data;
-    id_fraction = eval_ood(
-        net=network,
-        test_loader=test_data_loader,
-        epoch=epoch,
-        device=device,
-        threshold=class_thresholds,
-    )
-    print(
-        f"ID class threshold ID fraction (TPR) "
-        f"with percent {percentile}: {id_fraction}",
-        flush=True,
-    )
-
-    # Evaluate with out-of-distribution data;
-    for ood_dataset in ood_datasets:
-        # Omit used dataset;
-        if ood_dataset == args.dataset:
-            continue
-
-        print(f"OOD dataset: {ood_dataset}", flush=True)
-        ood_args = deepcopy(args)
-        ood_args.dataset = ood_dataset
-        _, _, _, _, _, ood_test_loader, _, _ = get_dataloaders(ood_args, device)
-
-        id_fraction = eval_ood(
-            net=network,
-            test_loader=ood_test_loader,
-            epoch=epoch,
-            device=device,
-            threshold=class_thresholds,
-        )
-        print(
-            f"{args.dataset} - OOD {ood_dataset} class threshold ID fraction (FPR) "
-            f"with percent {percentile}: {id_fraction}",
-            flush=True,
-        )
-
-
-def display_proto_data(network: torch.nn.Module, data_loader, validation_size: float):
-    head_mtrx = network.module._classification.weight
-    head_mtrx_non_zero = head_mtrx[head_mtrx.nonzero(as_tuple=True)]
-    head_bias = network.module._classification.bias
-
-    # Print prototypes data;
-    print(
-        f"Classifier weights:"
-        f"{head_mtrx}"
-        f"{head_mtrx.shape}",
-        flush=True,
-    )
-    print(
-        f"Classifier weights nonzero:"
-        f"{head_mtrx_non_zero}"
-        f"{head_mtrx_non_zero.shape}",
-        flush=True,
-    )
-    print(
-        f"Classifier bias:"
-        f"{head_bias}"
-        f"{head_bias.shape}",
-        flush=True,
-    )
-
-    # Print weights and relevant prototypes per class;
-    class_names = list(data_loader.dataset.class_to_idx.keys())
-    class_idxs = list(data_loader.dataset.class_to_idx.values())
-
-    # TODO: is shapes order valid???
-    num_classes, num_prototypes = head_mtrx.shape
-    for c_idx in range(num_classes):
-        relevant_ps = []
-        proto_weights = head_mtrx[c_idx, :]
-
-        for p_idx in range(num_prototypes):
-            if proto_weights[p_idx] > 1e-3:
-                relevant_ps.append((p_idx, proto_weights[p_idx].item()))
-
-        if validation_size != 0.0:
-            continue
-
-        print(
-            f"Class {c_idx}"
-            f"({class_names[class_idxs.index(c_idx)]}):"
-            f"has {len(relevant_ps)} relevant prototypes: {relevant_ps}",
-            flush=True,
-        )
