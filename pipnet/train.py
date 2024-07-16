@@ -449,7 +449,7 @@ def train_loop(
 ):
 
     for epoch in range(init_epoch, num_epochs+init_epoch):
-        print(f"\n Epoch {epoch} {phase}", flush=True)
+        print(f"\nEpoch {epoch} {phase}", flush=True)
         # Track epochs with loss function;
         loss_fn.set_curr_epoch(epoch)
 

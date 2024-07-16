@@ -283,7 +283,6 @@ class WeightedSumLoss(torch.nn.Module):
 
     def reset(self):
         self.curr_epoch = 0
-        self.num_epochs = 0
         self.summed_val = 0.0
         self.num_steps = 0
 
