@@ -1,10 +1,16 @@
 import torch
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import (
+    LRScheduler,
+    CosineAnnealingWarmRestarts,
+)
+from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 
-from pipnet.pipnet import PIPNet
-from pipnet.loss import WeightedSumLoss, LOSS_DATA
-from pipnet.metrics import Metric
+from pipnet.pipnet import PIPNet, save_pipnet
+from pipnet.test import evaluate_pipnet
+from pipnet.loss import WeightedSumLoss
+from pipnet.metrics import Metric, metric_data_to_str
 from pipnet.affine_ops import (
     affine,
     get_rotation_mtrx,
@@ -12,7 +18,7 @@ from pipnet.affine_ops import (
     get_affine_match_mask,
     draw_angles,
 )
-
+from util.logger import Logger
 from tqdm import tqdm
 from typing import List, Dict, Tuple, Callable, Optional
 
@@ -25,7 +31,7 @@ def forward_train_plain(
     loss_fn: WeightedSumLoss,
     metrics: List[Metric],
     device: torch.device,
-) -> LOSS_DATA:
+) -> Dict[str, torch.Tensor]:
     """
     Performs a standard PIP-Net train step.
     """
@@ -48,7 +54,7 @@ def forward_train_plain(
         for metric in metrics
     }
 
-    return loss_data
+    return loss_data | metrics_data
 
 
 def forward_train_rot_inv(
@@ -57,8 +63,9 @@ def forward_train_rot_inv(
     x2: torch.Tensor,
     targets: torch.Tensor,
     loss_fn: WeightedSumLoss,
+    metrics: List[Metric],
     device: torch.device,
-) -> LOSS_DATA:
+) -> Dict[str, torch.Tensor]:
     """
     Performs PIP-Net train step
     with forward and inverse rotation.
@@ -77,7 +84,9 @@ def forward_train_rot_inv(
         x_t = affine(x2, t_mtrx, padding_mode="reflection", device=device)
 
     # Forward pass;
-    model_output = network(torch.cat([x_i, x_t]))
+    inputs = torch.cat([x_i, x_t])
+    targets = torch.cat([targets, targets])
+    model_output = network(inputs)
 
     # Rotate back the transformed feature mask;
     z_i, z_t = model_output.proto_feature_map.chunk(2)
@@ -101,7 +110,15 @@ def forward_train_rot_inv(
         targets=targets,
         loss_mask=loss_mask,
     )
-    return loss_data
+    metrics_data = {
+        metric.name: metric(
+            model_output=model_output,
+            targets=targets,
+        )
+        for metric in metrics
+    }
+
+    return loss_data | metrics_data
 
 
 def forward_train_rot_match(
@@ -110,8 +127,9 @@ def forward_train_rot_match(
     x2: torch.Tensor,
     targets: torch.Tensor,
     loss_fn: WeightedSumLoss,
+    metrics: List[Metric],
     device: torch.device,
-) -> LOSS_DATA:
+) -> Dict[str, torch.Tensor]:
     """
     Performs PIP-Net train step
     with rotation and matching.
@@ -129,7 +147,9 @@ def forward_train_rot_match(
         x_t = affine(x2, t_mtrx, padding_mode="reflection", device=device)
 
     # Forward pass;
-    model_output = network(torch.cat([x_i, x_t]))
+    inputs = torch.cat([x_i, x_t])
+    targets = torch.cat([targets, targets])
+    model_output = network(inputs)
 
     with torch.no_grad():
         # Generate coordinates match matrix;
@@ -142,7 +162,31 @@ def forward_train_rot_match(
         targets=targets,
         loss_mask=match_mtrx,
     )
-    return loss_data
+    metrics_data = {
+        metric.name: metric(
+            model_output=model_output,
+            targets=targets,
+        )
+        for metric in metrics
+    }
+
+    return loss_data | metrics_data
+
+
+def select_forward_pass(mode: str) -> Callable:
+    """
+    Selects training forward pass function;
+    """
+    if mode == "MATCH":
+        return forward_train_rot_match
+    elif mode == "INV":
+        return forward_train_rot_inv
+    elif mode == "PLAIN":
+        return forward_train_plain
+
+    raise Exception(
+        f"Training augmentation mode {mode} not implemented!"
+    )
 
 
 def train_step_fp(
@@ -151,16 +195,17 @@ def train_step_fp(
     x1: torch.Tensor,
     x2: torch.Tensor,
     targets: torch.Tensor,
-    loss_func: PIPNetLoss,
+    loss_fn: WeightedSumLoss,
+    metrics: List[Metric],
     scaler: Optional[GradScaler],
     optimizers: Dict[str, Optimizer],
     device: torch.device,
-) -> LOSS_DATA:
+) -> Dict[str, torch.Tensor]:
     """
     Performs train step with Full Precision.
     """
     # Reset the gradients;
-    for opt in optimizers:
+    for opt in optimizers.values():
         opt.zero_grad(set_to_none=True)
 
     # Perform a train step;
@@ -169,11 +214,12 @@ def train_step_fp(
         x1=x1,
         x2=x2,
         targets=targets,
-        loss_func=loss_func,
+        loss_fn=loss_fn,
+        metrics=metrics,
         device=device,
     )
 
-    # Compute the gradient;
+    # Compute the gradients;
     total_loss = step_data["total_loss"]
     total_loss.backward()
 
@@ -190,16 +236,17 @@ def train_step_amp(
     x1: torch.Tensor,
     x2: torch.Tensor,
     targets: torch.Tensor,
-    loss_func: PIPNetLoss,
+    loss_fn: WeightedSumLoss,
+    metrics: List[Metric],
     scaler: GradScaler,
     optimizers: Dict[str, Optimizer],
     device: torch.device,
-) -> LOSS_DATA:
+) -> Dict[str, torch.Tensor]:
     """
     Performs train step with Automatic Mixed Precision.
     """
     # Reset the gradients;
-    for opt in optimizers:
+    for opt in optimizers.values():
         opt.zero_grad(set_to_none=True)
 
     # Perform a train step;
@@ -209,11 +256,12 @@ def train_step_amp(
             x1=x1,
             x2=x2,
             targets=targets,
-            loss_func=loss_func,
+            loss_fn=loss_fn,
+            metrics=metrics,
             device=device,
         )
 
-    # Compute the gradient;
+    # Compute the gradients;
     total_loss = step_data["total_loss"]
     scaler.scale(total_loss).backward()
 
@@ -238,28 +286,232 @@ def select_train_step(
     return train_step_fp, None
 
 
-def select_forward_pass(mode: str) -> Callable:
+def print_epoch_info(
+    phase: str,
+    batch_size: int,
+    network: PIPNet,
+    loss_fn: WeightedSumLoss,
+    aug_mode: str,
+    use_mixed_precision: bool,
+    device: torch.device,
+):
+    print(f"Phase: {phase}", flush=True)
+    print(f"Batch size: {batch_size}", flush=True)
+    print(f"Aug: {aug_mode}", flush=True)
+    print(f"AMP: {use_mixed_precision}", flush=True)
+    print(f"Device: {device}", flush=True)
+    print(
+        f"Number of parameters that require gradient: "
+        f"{network.module.count_gradient_params()}",
+        flush=True,
+    )
+    print("Partial Losses weights:", flush=True)
+    print(
+        ", ".join(
+            f"{p_loss.name}: {p_loss.weight}"
+            for p_loss in loss_fn.partial_losses
+        ),
+        flush=True,
+    )
+
+
+def train_epoch(
+    phase: str,
+    epoch_idx: int,
+    network: PIPNet,
+    train_loader: DataLoader,
+    optimizers: Dict[str, Optimizer],
+    schedulers: Dict[str, LRScheduler],
+    loss_fn: WeightedSumLoss,
+    metrics: List[Metric],
+    device: torch.device,
+    aug_mode: str,
+    use_mixed_precision: bool,
+) -> Dict[str, float]:
     """
-    Selects training forward pass function;
+    Performs single train epoch.
     """
-    if mode == "MATCH":
-        return forward_train_rot_match
-    elif mode == "INV":
-        return forward_train_rot_inv
-    elif mode == "PLAIN":
-        return forward_train_plain
+    # Print epoch info;
+    print_epoch_info(
+        phase=phase,
+        batch_size=train_loader.batch_size,
+        network=network,
+        loss_fn=loss_fn,
+        aug_mode=aug_mode,
+        use_mixed_precision=use_mixed_precision,
+        device=device,
+    )
 
-    raise Exception(f"Training mode {mode} not implemented!")
+    # Select train step function (AMP or FP);
+    train_step_func, scaler = select_train_step(use_mixed_precision)
+
+    # Select forward pass function (Rotations aug or plain);
+    forward_pass_func = select_forward_pass(aug_mode)
+
+    # Make sure the model is in train mode;
+    network.train()
+
+    # Reset loss and metrics aggregation;
+    loss_fn.reset()
+    [metric.reset() for metric in metrics]
+
+    # Save num steps;
+    num_steps = len(train_loader)
+
+    # Show progress on progress bar.
+    train_iter = tqdm(
+        enumerate(train_loader),
+        total=len(train_loader),
+        desc=f"{phase} ep{epoch_idx}",
+        mininterval=2.0,
+        ncols=0,
+    )
+
+    # Store learning rates values;
+    lr_hist = {lr_name: [] for lr_name in schedulers}
+
+    # Train epoch loop;
+    for step_idx, (x1, x2, y) in train_iter:
+        x1, x2, y = x1.to(device), x2.to(device), y.to(device)
+        step_data = train_step_func(
+            forward_pass_func=forward_pass_func,
+            network=network,
+            x1=x1,
+            x2=x2,
+            targets=y,
+            loss_fn=loss_fn,
+            metrics=metrics,
+            scaler=scaler,
+            optimizers=optimizers,
+            device=device,
+        )
+
+        # Set and save learning rates;
+        for lr_sch_name, lr_sch in schedulers.items():
+
+            if isinstance(lr_sch, CosineAnnealingWarmRestarts):
+                step_val = epoch_idx - 1 + (step_idx / num_steps)
+            else:
+                step_val = None
+
+            lr_sch.step(step_val)
+            lr_hist[lr_sch_name].append(lr_sch.get_last_lr()[0])
+
+        # Print loss data;
+        train_iter.set_postfix_str(
+            s=metric_data_to_str(step_data),
+            refresh=False,
+        )
+
+        # Clip classification parameters;
+        # TODO: clip by "requires grad..."
+        if phase != "pretrain":
+            network.clip_class_params(
+                zero_small_weights=True,
+                clip_bias=True,
+                clip_norm_mul=True,
+                print_results=False,
+            )
+
+    # Save the averaged epoch info;
+    epoch_info = {
+        "epoch_idx": epoch_idx,
+        "phase": phase,
+        "loss": loss_fn.get_average_value(),
+    }
+
+    for metric in metrics:
+        epoch_info[metric.name] = metric.get_aggregated_value()
+
+    for lr_name, lr_vec in lr_hist:
+        epoch_info[f"LR_{lr_name}"] = lr_hist
+
+    return epoch_info
 
 
-def step_data_to_str(loss_data: LOSS_DATA) -> str:
-    """
-    Converts loss data to string info.
-    """
-    loss_str = ""
+def train_loop(
+    num_epochs: int,
+    init_epoch: int,
+    train_loader: DataLoader,
+    test_loader: Optional[DataLoader],
+    network: PIPNet,
+    optimizers: Dict[str, Optimizer],
+    schedulers: Dict[str, LRScheduler],
+    loss_fn: WeightedSumLoss,
+    train_metrics: List[Metric],
+    test_metrics: List[Metric],
+    logger: Logger,
+    device: torch.device,
+    aug_mode: str,
+    use_mixed_precision: bool,
+    phase: str,
+    save_period: int = 30,
+):
 
-    for loss in loss_data:
-        loss_str += f"{loss}: {loss_data['loss'].item():.3f}"
+    for epoch in range(init_epoch, num_epochs+init_epoch):
+        print(f"\n Epoch {epoch} {phase}", flush=True)
+        # Track epochs with loss function;
+        loss_fn.set_curr_epoch(epoch)
 
-    return loss_str
+        # Track selected epochs;
+        is_save_epoch = epoch % save_period == 0
+        is_last_epoch = epoch == num_epochs
 
+        # Set small class weights to zero;
+        # TODO: clip by gradients req!
+        if all([
+            (is_last_epoch or is_save_epoch),
+            num_epochs > 1,
+            phase != "pretrain",
+        ]):
+            network.module.clip_class_params(
+                zero_small_weights=True,
+                clip_bias=False,
+                clip_norm_mul=False,
+                print_result=True,
+            )
+
+        # Train network;
+        epoch_info = train_epoch(
+            epoch_idx=epoch,
+            network=network,
+            train_loader=train_loader,
+            optimizers=optimizers,
+            schedulers=schedulers,
+            loss_fn=loss_fn,
+            metrics=train_metrics,
+            device=device,
+            aug_mode=aug_mode,
+            use_mixed_precision=use_mixed_precision,
+            phase=phase,
+        )
+
+        # Evaluate model;
+        if test_loader:
+            eval_info = evaluate_pipnet(
+                net=network,
+                test_loader=test_loader,
+                metrics=test_metrics,
+                epoch=epoch,
+                device=device,
+            )
+            epoch_info = eval_info | epoch_info
+
+        # Log values;
+        logger.log_epoch_info(epoch_info)
+
+        # Save checkpoint;
+        save_pipnet(
+            log_dir=logger.log_dir,
+            checkpoint_name=f'net_{phase}',
+            network=network,
+            optimizers=optimizers,
+        )
+
+        if is_save_epoch:
+            save_pipnet(
+                log_dir=logger.log_dir,
+                checkpoint_name=f'net_{phase}_ep{epoch}',
+                network=network,
+                optimizers=optimizers,
+            )
