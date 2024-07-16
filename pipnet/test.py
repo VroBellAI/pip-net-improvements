@@ -16,7 +16,7 @@ from copy import deepcopy
 from typing import List, Dict, Union
 
 from pipnet.pipnet import PIPNet
-from metrics import (
+from pipnet.metrics import (
     Metric,
     NumAbstainedPredictions,
     NumInDistribution,

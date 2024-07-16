@@ -126,7 +126,10 @@ def train_finetune(
     )
 
     # Define metrics;
-    train_metrics = [ClassAccuracy(), NumRelevantScores(thresh=0.1)]
+    train_metrics = [
+        ClassAccuracy(),
+        NumRelevantScores(thresh=0.1),
+    ]
     test_metrics = [
         NumAbstainedPredictions(),
         ANZProto(),
@@ -196,7 +199,10 @@ def train_frozen(
     )
 
     # Define metrics;
-    train_metrics = [ClassAccuracy(), NumRelevantScores(thresh=0.1)]
+    train_metrics = [
+        ClassAccuracy(),
+        NumRelevantScores(thresh=0.1),
+    ]
     test_metrics = [
         NumAbstainedPredictions(),
         ANZProto(),
