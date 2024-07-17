@@ -93,7 +93,7 @@ def evaluate_pipnet(
     test_info = {}
 
     for metric in metrics:
-        test_info[metric.name] = metric.get_aggregated_value()
+        test_info[f"test_{metric.name}"] = metric.get_aggregated_value()
 
     return test_info
 
