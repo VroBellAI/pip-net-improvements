@@ -175,7 +175,7 @@ class ANZSimScores(Metric):
         _, pred_classes = torch.max(logits, dim=1)
 
         # Extract weight vectors of predicted classes;
-        class_w = network.get_class_weight()
+        class_w = network.module.get_class_weight()
         pred_class_vec = torch.index_select(class_w, dim=0, index=pred_classes)
 
         # Calculate Almost Non-Zero similarities
@@ -209,7 +209,7 @@ class LocalSize(Metric):
         batch_size = proto_vec.shape[0]
 
         # Extract classification weight matrix;
-        class_w = network.get_class_weight()
+        class_w = network.module.get_class_weight()
         class_w_repeat = class_w.unsqueeze(1).repeat(1, batch_size, 1)
 
         sim_scores = proto_vec * class_w_repeat
@@ -240,7 +240,7 @@ class NumNonZeroPrototypes(Metric):
         network: PIPNet,
         **kwargs,
     ) -> torch.Tensor:
-        class_w = network.get_class_weight()
+        class_w = network.module.get_class_weight()
         result = (class_w > self.threshold).any(dim=0).sum()
 
         # Aggregate result;

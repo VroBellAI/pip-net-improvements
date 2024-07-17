@@ -413,7 +413,7 @@ def train_epoch(
         # Clip classification parameters;
         # TODO: clip by "requires grad..."
         if phase != "pretrain":
-            network.clip_class_params(
+            network.module.clip_class_params(
                 zero_small_weights=True,
                 clip_bias=True,
                 clip_norm_mul=True,
