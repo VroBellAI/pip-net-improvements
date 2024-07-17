@@ -503,7 +503,7 @@ def train_loop(
                 epoch_idx=epoch,
                 device=device,
             )
-            epoch_info = eval_info | epoch_info
+            epoch_info = epoch_info | eval_info
 
         # Log values;
         logger.log_epoch_info(epoch_info)
