@@ -500,7 +500,7 @@ def train_loop(
                 network=network,
                 test_loader=test_loader,
                 metrics=test_metrics,
-                epoch=epoch,
+                epoch_idx=epoch,
                 device=device,
             )
             epoch_info = eval_info | epoch_info
