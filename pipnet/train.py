@@ -297,7 +297,7 @@ def print_epoch_info(
     use_mixed_precision: bool,
     device: torch.device,
 ):
-    print(f"Epoch: {epoch_idx}", flush=True)
+    print(f"\nEpoch: {epoch_idx}", flush=True)
     print(f"Phase: {phase}", flush=True)
     print(f"Num phase epochs: {num_epochs}", flush=True)
     print(f"Batch size: {batch_size}", flush=True)

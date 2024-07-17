@@ -84,7 +84,7 @@ class NumRelevantScores(Metric):
         # Calculate # relevant scores;
         relevant_scores = torch.relu(proto_vec - self.thresh)
         num_relevant_scores = torch.count_nonzero(relevant_scores, dim=1)
-        result = num_relevant_scores.mean()
+        result = num_relevant_scores.float().mean()
 
         # Aggregate result;
         self.summed_val += result.detach().item()
@@ -115,7 +115,7 @@ class NumAbstainedPredictions(Metric):
         # Calculate non-zero class scores;
         logits_max_scores, _ = torch.max(logits, dim=1)
         num_relevant_predictions = torch.count_nonzero(logits_max_scores)
-        result = batch_size - num_relevant_predictions
+        result = (batch_size - num_relevant_predictions).float()
 
         # Aggregate result;
         self.summed_val += result.detach().item()
