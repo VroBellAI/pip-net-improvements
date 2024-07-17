@@ -57,13 +57,25 @@ class PIPNet(nn.Module):
         self._classification = classification_layer
         self._multiplier = classification_layer.normalization_multiplier
 
-        # Group network parameters;
-        self.params_to_train = []
-        self.params_to_freeze = []
-        self.params_backbone = []
-        self.params_classifier = self._classification.parameters()
-        self.params_addon = self._add_on.parameters()
-        self.group_parameters()
+    @property
+    def params_classifier(self):
+        return self._classification.parameters()
+
+    @property
+    def params_addon(self):
+        return self._add_on.parameters()
+
+    @property
+    def params_to_train(self):
+        return self._group_parameters('to_train')
+
+    @property
+    def params_to_freeze(self):
+        return self._group_parameters('to_freeze')
+
+    @property
+    def params_backbone(self):
+        return self._group_parameters('backbone')
 
     def forward(self, x: torch.Tensor, inference: bool = False) -> PIPNetOutput:
         features = self._net(x)
@@ -120,41 +132,56 @@ class PIPNet(nn.Module):
     def get_num_classes(self) -> int:
         return self._num_classes
 
-    def group_parameters(self):
-        # TODO: Iterators instead of lists...
-        # set up optimizer
-        if 'resnet50' in self._arch_name:
-            # freeze resnet50 except last convolutional layer
-            for name, param in self._net.named_parameters():
-                if 'layer4.2' in name:
-                    self.params_to_train.append(param)
-                elif 'layer4' in name or 'layer3' in name:
-                    self.params_to_freeze.append(param)
-                elif 'layer2' in name:
-                    self.params_backbone.append(param)
-                else:
-                    # Such that model training fits on one gpu.
-                    param.requires_grad = False
-                    # params_backbone.append(param)
-            return
+    def _group_parameters(self, group_name: str):
+        # Define grouping conditions;
+        convnext_conditions = {
+            "to_train": [
+                lambda name: "features.7.2" in name,
+            ],
+            "to_freeze": [
+                lambda name: "features.7.2" not in name,
+                lambda name: ("features.7" in name or "features.6" in name),
+            ],
+            "backbone": [
+                lambda name: "features.7.2" not in name,
+                lambda name: "features.7" not in name,
+                lambda name: "features.6" not in name,
+            ],
+        }
 
-        if 'convnext' in self._arch_name:
+        resnet_conditions = {
+            "to_train": [
+                lambda name: "layer4.2" in name,
+            ],
+            "to_freeze": [
+                lambda name: "layer4.2" not in name,
+                lambda name: ("layer4" in name or "layer3" in name),
+            ],
+            "backbone": [
+                lambda name: "layer2" in name,
+            ],
+        }
+
+        # Select conditions based on the chosen architecture;
+        if "resnet50" in self._arch_name:
+            print("chosen network is resnet50", flush=True)
+            conditions = resnet_conditions
+
+        elif "convnext" in self._arch_name:
             print("chosen network is convnext", flush=True)
-            for name, param in self._net.named_parameters():
-                if 'features.7.2' in name:
-                    self.params_to_train.append(param)
-                elif 'features.7' in name or 'features.6' in name:
-                    self.params_to_freeze.append(param)
-                # CUDA MEMORY ISSUES? COMMENT ABOVE LINES AND USE THE FOLLOWING INSTEAD
-                # elif 'features.5' in name or 'features.4' in name:
-                #     params_backbone.append(param)
-                # else:
-                #     param.requires_grad = False
-                else:
-                    self.params_backbone.append(param)
-            return
+            conditions = convnext_conditions
+        else:
+            raise Exception("Network is not ResNet50 or ConvNext!")
 
-        raise Exception("Network is not ResNet or ConvNext!")
+        # Params grouping generator;
+        def params_generator():
+            group_conditions = conditions[group_name]
+
+            for name, param in self.named_parameters():
+                if all([cond(name) for cond in group_conditions]):
+                    yield param
+
+        return params_generator()
 
     @torch.no_grad()
     def clip_class_params(

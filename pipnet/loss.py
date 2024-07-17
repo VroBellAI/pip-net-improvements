@@ -272,12 +272,12 @@ class WeightedSumLoss(torch.nn.Module):
         loss_data["total_loss"] = total_loss
 
         # Aggregate result;
-        self.summed_val += total_loss.detach()
+        self.summed_val += total_loss.detach().item()
         self.num_steps += 1
 
         return loss_data
 
-    def get_average_value(self) -> float:
+    def get_aggregated_value(self) -> float:
         return self.summed_val / self.num_steps
 
     def reset(self):

@@ -55,7 +55,7 @@ def evaluate_pipnet(
     epoch_idx: int,
     device: torch.device,
     phase: str = "evaluation"
-):
+) -> Dict[str, float]:
     
     # Make sure the model is in evaluation mode;
     network.eval()

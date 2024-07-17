@@ -21,7 +21,7 @@ class Metric(torch.nn.Module):
     ) -> torch.Tensor:
         pass
 
-    def get_aggregated_value(self) -> torch.Tensor:
+    def get_aggregated_value(self) -> float:
         if self.aggregation == "mean":
             return self.summed_val / self.num_steps
 
@@ -56,7 +56,7 @@ class ClassAccuracy(Metric):
         result = correct / float(len(targets))
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -87,7 +87,7 @@ class NumRelevantScores(Metric):
         result = num_relevant_scores.mean()
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -118,7 +118,7 @@ class NumAbstainedPredictions(Metric):
         result = batch_size - num_relevant_predictions
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -145,7 +145,7 @@ class ANZProto(Metric):
         result = (torch.abs(proto_vec) > self.threshold).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -184,7 +184,7 @@ class ANZSimScores(Metric):
         result = (torch.abs(sim_scores) > self.threshold).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -217,7 +217,7 @@ class LocalSize(Metric):
         result = (sim_scores_thr > 0.0).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -244,7 +244,7 @@ class NumNonZeroPrototypes(Metric):
         result = (class_w > self.threshold).any(dim=0).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -281,7 +281,7 @@ class TopKClassAccuracy(Metric):
         result = correct_predictions.float().mean()
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -321,7 +321,7 @@ class NumInDistribution(Metric):
             raise ValueError("provided threshold should be float or dict", type(self.threshold))
 
         # Aggregate result;
-        self.summed_val += result.detach()
+        self.summed_val += result.detach().item()
         self.num_steps += 1
 
         return result

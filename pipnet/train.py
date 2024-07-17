@@ -417,7 +417,7 @@ def train_epoch(
     epoch_info = {
         "epoch_idx": epoch_idx,
         "phase": phase,
-        "loss": loss_fn.get_average_value(),
+        "loss": loss_fn.get_aggregated_value(),
     }
 
     for metric in metrics:
