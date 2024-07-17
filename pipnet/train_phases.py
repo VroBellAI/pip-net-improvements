@@ -61,7 +61,7 @@ def pretrain(
     # Define losses;
     partial_losses = [
         TanhLoss(weight=5.0, device=device, eps=eps),
-        # Set alignment weight to 0
+        # Set alignment weight to None
         # to dynamically modify it during training.
         get_align_loss(aug_mode)(weight=None, device=device, eps=eps),
     ]
