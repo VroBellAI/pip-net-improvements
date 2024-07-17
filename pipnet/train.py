@@ -287,6 +287,8 @@ def select_train_step(
 
 
 def print_epoch_info(
+    epoch_idx: int,
+    num_epochs: int,
     phase: str,
     batch_size: int,
     network: PIPNet,
@@ -295,7 +297,9 @@ def print_epoch_info(
     use_mixed_precision: bool,
     device: torch.device,
 ):
+    print(f"Epoch: {epoch_idx}", flush=True)
     print(f"Phase: {phase}", flush=True)
+    print(f"Num phase epochs: {num_epochs}", flush=True)
     print(f"Batch size: {batch_size}", flush=True)
     print(f"Aug: {aug_mode}", flush=True)
     print(f"AMP: {use_mixed_precision}", flush=True)
@@ -308,7 +312,7 @@ def print_epoch_info(
     print("Partial Losses weights:", flush=True)
     print(
         ", ".join(
-            f"{p_loss.name}: {p_loss.weight}"
+            f"{p_loss.name}: {p_loss.get_weight(epoch_idx=epoch_idx, num_epochs=num_epochs)}"
             for p_loss in loss_fn.partial_losses
         ),
         flush=True,
@@ -318,6 +322,7 @@ def print_epoch_info(
 def train_epoch(
     phase: str,
     epoch_idx: int,
+    num_epochs: int,
     network: PIPNet,
     train_loader: DataLoader,
     optimizers: Dict[str, Optimizer],
@@ -333,6 +338,8 @@ def train_epoch(
     """
     # Print epoch info;
     print_epoch_info(
+        epoch_idx=epoch_idx,
+        num_epochs=num_epochs,
         phase=phase,
         batch_size=train_loader.batch_size,
         network=network,
@@ -423,7 +430,7 @@ def train_epoch(
     for metric in metrics:
         epoch_info[metric.name] = metric.get_aggregated_value()
 
-    for lr_name, lr_vec in lr_hist:
+    for lr_name, lr_vec in lr_hist.items():
         epoch_info[f"LR_{lr_name}"] = lr_hist
 
     return epoch_info
@@ -449,7 +456,6 @@ def train_loop(
 ):
 
     for epoch in range(init_epoch, num_epochs+init_epoch):
-        print(f"\nEpoch {epoch} {phase}", flush=True)
         # Track epochs with loss function;
         loss_fn.set_curr_epoch(epoch)
 
@@ -474,6 +480,7 @@ def train_loop(
         # Train network;
         epoch_info = train_epoch(
             epoch_idx=epoch,
+            num_epochs=num_epochs,
             network=network,
             train_loader=train_loader,
             optimizers=optimizers,
