@@ -475,7 +475,7 @@ def train_loop(
                 zero_small_weights=True,
                 clip_bias=False,
                 clip_norm_mul=False,
-                print_result=True,
+                print_results=True,
             )
 
         # Train network;
