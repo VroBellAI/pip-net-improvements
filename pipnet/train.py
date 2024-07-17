@@ -430,8 +430,9 @@ def train_epoch(
     for metric in metrics:
         epoch_info[metric.name] = metric.get_aggregated_value()
 
-    for lr_name, lr_vec in lr_hist.items():
-        epoch_info[f"LR_{lr_name}"] = lr_hist
+    # TODO: bring back visualization;
+    # for lr_name, lr_vec in lr_hist.items():
+    #     epoch_info[f"LR_{lr_name}"] = lr_vec
 
     return epoch_info
 

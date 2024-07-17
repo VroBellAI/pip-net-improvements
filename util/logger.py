@@ -14,6 +14,16 @@ class Logger:
         self.log_file_name = f"{log_file_name}.csv"
         self.log_file_path = f"{self.log_dir}/{self.log_file_name}"
 
+        # Ensure the directories exist;
+        if not os.path.isdir(self.log_dir):
+            os.mkdir(self.log_dir)
+
+        if not os.path.isdir(self.metadata_dir):
+            os.mkdir(self.metadata_dir)
+
+        if not os.path.isdir(self.checkpoint_dir):
+            os.mkdir(self.checkpoint_dir)
+
         # Load existing log, or create new one;
         self.log_df = self.load_or_create_log_file()
 
