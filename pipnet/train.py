@@ -497,7 +497,7 @@ def train_loop(
         # Evaluate model;
         if test_loader:
             eval_info = evaluate_pipnet(
-                net=network,
+                network=network,
                 test_loader=test_loader,
                 metrics=test_metrics,
                 epoch=epoch,
