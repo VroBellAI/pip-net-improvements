@@ -74,7 +74,7 @@ class TopKProtoActivations:
 
     def save_visualizations(self, save_dir: str):
 
-        all_image_crops = []
+        all_image_crops = None
 
         # Visualize individual prototypes activations;
         for proto_idx in self.protos_idxs:
@@ -100,7 +100,10 @@ class TopKProtoActivations:
                 fp=os.path.join(save_dir, f"grid_topk_{proto_idx}.png"),
             )
 
-            all_image_crops += image_crops
+            if all_image_crops is None:
+                all_image_crops = image_crops
+            else:
+                all_image_crops = torch.cat([all_image_crops, image_crops], dim=0)
 
         # Visualize all prototypes activations;
         if len(all_image_crops) > 0:
@@ -152,7 +155,10 @@ class TopKProtoActivations:
             anchor='mm',
             fill="white",
         )
-        return transforms.ToTensor()(txtimage).to(device=self.device)
+        proto_crop = transforms.ToTensor()(txtimage)
+        proto_crop = torch.unsqueeze(proto_crop, dim=0)
+        proto_crop = proto_crop.to(device=self.device)
+        return proto_crop
 
 
 def extract_max_hw_idxs(
