@@ -39,6 +39,7 @@ class TopKProtoActivations:
         proto_idx: int,
         proto_scores: torch.Tensor,
         proto_image_coords: Tuple[torch.Tensor, ...],
+        rec_field_hw_dims: Tuple[int, int],
         images: torch.tensor,
     ):
         """
@@ -48,11 +49,10 @@ class TopKProtoActivations:
 
         # Extract image coords;
         y_min, y_max, x_min, x_max = proto_image_coords
-        crop_h = (y_max - y_min)[0].item()
-        crop_w = (x_max - x_min)[0].item()
 
         # Initialize a tensor to hold the crops
-        image_crops = torch.zeros((batch_size, 3, crop_h, crop_w))
+        rec_field_h, rec_field_w = rec_field_hw_dims
+        image_crops = torch.zeros((batch_size, 3, rec_field_h, rec_field_w))
         image_crops = image_crops.to(device=self.device)
 
         # Crop patches from the images
@@ -218,10 +218,6 @@ def visualize_topk(
 
     # Extract shapes;
     num_prototypes = network.module.get_num_prototypes()
-    patch_size, skip = get_patch_size(
-        image_size=image_hw_dims[0],
-        num_prototypes=num_prototypes,
-    )
 
     # Show progress on progress bar;
     img_iter = tqdm(
@@ -247,6 +243,11 @@ def visualize_topk(
         proto_feature_map = model_output.proto_feature_map
         h_max_idxs, w_max_idxs = extract_max_hw_idxs(proto_feature_map)
 
+        patch_size, skip = get_patch_size(
+            image_size=x.shape[2],
+            latent_size=proto_feature_map.shape[2],
+        )
+
         for proto_idx in range(num_prototypes):
             # Omit irrelevant protos;
             if proto_idx in irrelevant_proto_idxs:
@@ -271,6 +272,7 @@ def visualize_topk(
                 proto_idx=proto_idx,
                 proto_scores=proto_scores,
                 proto_image_coords=proto_image_coords,
+                rec_field_hw_dims=(patch_size, patch_size),
                 images=x,
             )
 
@@ -479,10 +481,10 @@ def latent_to_image_coords(
         w_max_image = w_idxs * offset_w + window_w
         w_max_image = torch.where(w_max_image < image_w, image_w, w_max_image)
 
-    h_max_image = torch.where(h_idxs != latent_h - 1, image_h, h_max_image)
+    h_max_image = torch.where(h_idxs == latent_h - 1, image_h, h_max_image)
     w_max_image = torch.where(w_idxs == latent_w - 1, image_w, w_max_image)
-    h_min_image = torch.where(h_max_image == image_h, image_h-offset_h, h_min_image)
-    w_min_image = torch.where(w_max_image == image_w, image_w-offset_w, w_min_image)
+    h_min_image = torch.where(h_max_image == image_h, image_h-window_h, h_min_image)
+    w_min_image = torch.where(w_max_image == image_w, image_w-window_w, w_min_image)
 
     h_min_image = h_min_image.to(torch.int)
     h_max_image = h_max_image.to(torch.int)
