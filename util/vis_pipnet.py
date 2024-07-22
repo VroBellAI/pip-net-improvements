@@ -472,4 +472,9 @@ def latent_to_image_coords(
     h_min_image = torch.where(h_max_image == image_h, image_h-offset_h, h_min_image)
     w_min_image = torch.where(w_max_image == image_w, image_w-offset_w, w_min_image)
 
+    h_min_image = h_min_image.to(torch.int)
+    h_max_image = h_max_image.to(torch.int)
+    w_min_image = w_min_image.to(torch.int)
+    w_max_image = w_max_image.to(torch.int)
+
     return h_min_image, h_max_image, w_min_image, w_max_image
