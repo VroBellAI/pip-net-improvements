@@ -124,7 +124,7 @@ class TopKProtoActivations:
         """
         Removes prototypes without any relevant activation score.
         """
-        for proto_idx in self.top_ks.keys():
+        for proto_idx in list(self.top_ks.keys()):
             found = False
 
             for proto_score in self.top_ks[proto_idx][0]:
