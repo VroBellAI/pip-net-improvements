@@ -152,7 +152,7 @@ class TopKProtoActivations:
             anchor='mm',
             fill="white",
         )
-        return transforms.ToTensor()(txtimage)
+        return transforms.ToTensor()(txtimage).to(device=self.device)
 
 
 def extract_max_hw_idxs(
