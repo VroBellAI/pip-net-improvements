@@ -41,11 +41,19 @@ class TopKProtoActivations:
         """
         Adds new prototype activation data if possible.
         """
+        batch_size = images.shape[0]
+
         # Extract image coords;
         y_min, y_max, x_min, x_max = proto_image_coords
+        crop_h = y_max - y_min
+        crop_w = x_max - x_min
 
-        # Crop receptive fields;
-        image_crops = images[..., y_min:y_max, x_min:x_max]
+        # Initialize a tensor to hold the crops
+        image_crops = torch.zeros((batch_size, 3, crop_h, crop_w))
+
+        # Crop patches from the images
+        for i in range(batch_size):
+            image_crops[i] = images[i, :, y_min[i]:y_max[i], x_min[i]:x_max[i]]
 
         # Select and store top k activations with visualizations;
         if proto_idx in self.top_ks:
