@@ -16,11 +16,14 @@ from typing import Tuple, List, Dict, Set
 
 class TopKProtoActivations:
     def __init__(
-        self, k: int,
+        self,
+        k: int,
+        device: torch.device,
         relevance_threshold: float = 0.1,
     ):
         self.k = k
         self.top_ks = {}
+        self.device = device
         self.relevance_threshold = relevance_threshold
 
     @property
@@ -50,6 +53,7 @@ class TopKProtoActivations:
 
         # Initialize a tensor to hold the crops
         image_crops = torch.zeros((batch_size, 3, crop_h, crop_w))
+        image_crops = image_crops.to(device=self.device)
 
         # Crop patches from the images
         for i in range(batch_size):
@@ -229,7 +233,7 @@ def visualize_topk(
     )
 
     # Initialize storage for top K activations
-    top_k_proto_act = TopKProtoActivations(k=k)
+    top_k_proto_act = TopKProtoActivations(k=k, device=device)
 
     # Iterate through the projection set;
     for batch_idx, (x, _) in img_iter:
