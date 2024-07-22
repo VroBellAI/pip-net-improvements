@@ -45,8 +45,8 @@ class TopKProtoActivations:
 
         # Extract image coords;
         y_min, y_max, x_min, x_max = proto_image_coords
-        crop_h = y_max - y_min
-        crop_w = x_max - x_min
+        crop_h = (y_max - y_min)[0].item()
+        crop_w = (x_max - x_min)[0].item()
 
         # Initialize a tensor to hold the crops
         image_crops = torch.zeros((batch_size, 3, crop_h, crop_w))
