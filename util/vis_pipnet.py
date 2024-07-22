@@ -72,16 +72,25 @@ class TopKProtoActivations:
         # Store top k;
         self.top_ks[proto_idx] = (proto_scores[:self.k], image_crops[:self.k])
 
-    def save_visualizations(self, save_dir: str):
+    def save_visualizations(self, save_dir: str, data_loader: DataLoader):
 
         all_image_crops = None
+
+        # Extract normalization params from data loader
+        mean, std = self.get_normalization_params(data_loader)
+        mean = torch.tensor(mean).view(1, 3, 1, 1)
+        std = torch.tensor(std).view(1, 3, 1, 1)
+        mean = mean.to(device=self.device)
+        std = std.to(device=self.device)
 
         # Visualize individual prototypes activations;
         for proto_idx in self.protos_idxs:
 
-            # Convert proto idx to visualized tensor;
+            # Denormalize image crops;
             image_crops = self.top_ks[proto_idx][1]
+            image_crops = self.denormalize(image_crops, mean, std)
 
+            # Convert proto idx to visualized tensor;
             proto_idx_crop = self.proto_idx_to_crop(
                 idx=proto_idx,
                 crop_h=image_crops.shape[2],
@@ -150,7 +159,7 @@ class TopKProtoActivations:
         )
         draw = D.Draw(txtimage)
         draw.text(
-            xy=(crop_h // 2, crop_w // 2),
+            xy=(1, crop_w // 2),
             text=text,
             anchor='mm',
             fill="white",
@@ -159,6 +168,35 @@ class TopKProtoActivations:
         proto_crop = torch.unsqueeze(proto_crop, dim=0)
         proto_crop = proto_crop.to(device=self.device)
         return proto_crop
+
+    def get_normalization_params(
+        self,
+        data_loader: DataLoader,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        dataset = data_loader.dataset
+        transform = dataset.transform
+
+        if isinstance(transform, transforms.Compose):
+            for t in transform.transforms:
+                if isinstance(t, transforms.Normalize):
+                    return t.mean, t.std
+
+        elif isinstance(transform, transforms.Normalize):
+            return transform.mean, transform.std
+
+        raise ValueError(
+            "Normalization transform not found "
+            "in the dataset's transform pipeline!"
+        )
+
+    def denormalize(
+        self,
+        images: torch.Tensor,
+        mean: torch.Tensor,
+        std: torch.Tensor,
+    ) -> torch.Tensor:
+        images = images * std + mean
+        return images
 
 
 def extract_max_hw_idxs(
@@ -282,11 +320,15 @@ def visualize_topk(
                 images=x,
             )
 
-    # Discard irrelevant prototypes;
+    # Discard irrelevant prototypes
+    # (Based on dataset activation scores);
     top_k_proto_act.discard_irrelevant_protos()
 
     # Visualize receptive fields;
-    top_k_proto_act.save_visualizations(save_dir=save_dir)
+    top_k_proto_act.save_visualizations(
+        save_dir=save_dir,
+        data_loader=projectloader,
+    )
 
     # Return indices of relevant prototypes;
     return list(top_k_proto_act.protos_idxs)
