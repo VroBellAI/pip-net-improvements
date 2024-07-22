@@ -159,7 +159,7 @@ def get_dataloaders(args: argparse.Namespace, device):
                                             )
     
     projectloader = torch.utils.data.DataLoader(projectset,
-                                              batch_size = 1,
+                                              batch_size=args.batch_size,
                                               shuffle=False,
                                               pin_memory=cuda,
                                               num_workers=num_workers,
@@ -175,7 +175,7 @@ def get_dataloaders(args: argparse.Namespace, device):
                                              drop_last=False
                                              )
     test_projectloader = torch.utils.data.DataLoader(testset_projection,
-                                             batch_size=1,
+                                             batch_size=args.batch_size,
                                              shuffle=False,
                                              pin_memory=cuda,
                                              num_workers=num_workers,
