@@ -85,11 +85,6 @@ def run_pipnet(args: Namespace):
         device=device,
     )
 
-    # Pass num prototypes to arguments;
-    # TODO: remove in the later refactor
-    args.wshape = pip_net.module.get_num_prototypes()
-    print(f"Output shape: {args.wshape}", flush=True)
-
     # Pretrain prototypes;
     pretrain(
         num_epochs=args.epochs_pretrain,
@@ -105,15 +100,20 @@ def run_pipnet(args: Namespace):
         save_period=args.epochs_pretrain,
     )
 
-    # # Visualize top K prototypes;
-    # if 'convnext' in args.net and args.epochs_pretrain > 0:
-    #     visualize_topk(
-    #         net=pip_net,
-    #         projectloader=loaders["project"],
-    #         device=device,
-    #         foldername='visualised_pretrained_prototypes_topk',
-    #         args=args,
-    #     )
+    # Visualize top K prototypes;
+    if 'convnext' in args.net and args.epochs_pretrain > 0:
+        vis_dir = os.path.join(
+            logger.log_dir,
+            'visualised_pretrained_prototypes_topk',
+        )
+        visualize_topk(
+            network=pip_net,
+            projectloader=loaders["project"],
+            device=device,
+            save_dir=vis_dir,
+            image_hw_dims=(args.image_size, args.image_size),
+            k=10,
+        )
 
     # Initialize optimizers and schedulers for second training phase;
     set_random_seed(args.seed)  # <- reset seed as in the original repo;
@@ -202,19 +202,23 @@ def run_pipnet(args: Namespace):
         use_mixed_precision=args.mixed_precision,
         save_period=30,
     )
-
     # Visualize top K prototypes;
-    top_ks = visualize_topk(
-        net=pip_net,
+    vis_dir = os.path.join(
+        logger.log_dir,
+        'visualised_prototypes_topk',
+    )
+    relevant_proto_idxs = visualize_topk(
+        network=pip_net,
         projectloader=loaders["project"],
         device=device,
-        foldername='visualised_prototypes_topk',
-        args=args,
+        save_dir=vis_dir,
+        image_hw_dims=(args.image_size, args.image_size),
+        k=10,
     )
 
     # Zero out rarely-occurring prototypes;
     zero_idxs = pip_net.zero_out_irrelevant_protos(
-        top_ks=top_ks,
+        relevant_proto_idxs=relevant_proto_idxs,
         min_score=0.1,
     )
     print(
@@ -232,38 +236,38 @@ def run_pipnet(args: Namespace):
     )
 
     # Evaluate prototype purity;
-    if args.dataset == 'CUB-200-2011':
-        evaluate_prototype_purity(
-            epoch=args.epochs,
-            network=pip_net,
-            train_data_loader=loaders["project"],
-            test_data_loader=loaders["test_project"],
-            args=args,
-            log=logger,
-            device=device,
-            threshold=0.5,
-        )
-
-    visualize_all(
-        network=pip_net,
-        proj_loader=loaders["project"],
-        test_proj_loader=loaders["test_project"],
-        classes=classes,
-        device=device,
-        args=args,
-    )
-
-    # Evaluate out of distribution detection;
-    evaluate_ood_detection(
-        epoch=args.epochs,
-        network=pip_net,
-        test_data_loader=loaders["test"],
-        ood_datasets=["CARS", "CUB-200-2011", "pets"],
-        percentile=95.0,
-        log=logger,
-        args=args,
-        device=device
-    )
+    # if args.dataset == 'CUB-200-2011':
+    #     evaluate_prototype_purity(
+    #         epoch=args.epochs,
+    #         network=pip_net,
+    #         train_data_loader=loaders["project"],
+    #         test_data_loader=loaders["test_project"],
+    #         args=args,
+    #         log=logger,
+    #         device=device,
+    #         threshold=0.5,
+    #     )
+    #
+    # visualize_all(
+    #     network=pip_net,
+    #     proj_loader=loaders["project"],
+    #     test_proj_loader=loaders["test_project"],
+    #     classes=classes,
+    #     device=device,
+    #     args=args,
+    # )
+    #
+    # # Evaluate out of distribution detection;
+    # evaluate_ood_detection(
+    #     epoch=args.epochs,
+    #     network=pip_net,
+    #     test_data_loader=loaders["test"],
+    #     ood_datasets=["CARS", "CUB-200-2011", "pets"],
+    #     percentile=95.0,
+    #     log=logger,
+    #     args=args,
+    #     device=device
+    # )
 
     print("Done!", flush=True)
 

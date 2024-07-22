@@ -20,7 +20,7 @@ def get_data(args: argparse.Namespace):
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    if args.dataset =='CUB-200-2011':     
+    if args.dataset == 'CUB-200-2011':
         return get_birds(
             True,
             args.data_dir+'/CUB_200_2011/dataset/train_crop',
@@ -32,26 +32,30 @@ def get_data(args: argparse.Namespace):
             args.data_dir+'/CUB_200_2011/dataset/train',
             args.data_dir+'/CUB_200_2011/dataset/test_full',
         )
+
     if args.dataset == 'pets':
         return get_pets(
-            True,
-            args.data_dir+'/PETS/dataset/train',
-            args.data_dir+'/PETS/dataset/train',
-            args.data_dir+'/PETS/dataset/test',
-            args.image_size,
-            args.seed,
-            args.validation_size,
+            augment=True,
+            train_dir=args.data_dir+'/PETS/dataset/train',
+            project_dir=args.data_dir+'/PETS/dataset/train',
+            test_dir=args.data_dir+'/PETS/dataset/test',
+            img_size=args.image_size,
+            seed=args.seed,
+            validation_size=args.validation_size,
         )
-    if args.dataset == 'partimagenet': #use --validation_size of 0.2
-        return get_partimagenet(
-            True,
-            args.data_dir+'/partimagenet/dataset/all',
-            args.data_dir+'/partimagenet/dataset/all',
-            None,
-            args.image_size,
-            args.seed,
-            args.validation_size,
+
+    # Use --validation_size of 0.2
+    if args.dataset == 'partimagenet':
+        return get_part_imagenet(
+            augment=True,
+            train_dir=args.data_dir+'/partimagenet/dataset/all',
+            project_dir=args.data_dir+'/partimagenet/dataset/all',
+            test_dir=None,
+            img_size=args.image_size,
+            seed=args.seed,
+            validation_size=args.validation_size,
         )
+
     if args.dataset == 'CARS':
         return get_cars(
             True,
@@ -73,6 +77,7 @@ def get_data(args: argparse.Namespace):
             args.validation_size,
         )
     raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
+
 
 def get_dataloaders(args: argparse.Namespace, device):
     """
@@ -233,15 +238,25 @@ def create_datasets(transform1, transform2, transform_no_augment, num_channels:i
 
     return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
-def get_pets(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
+
+def get_pets(
+    augment: bool,
+    train_dir: str,
+    project_dir: str,
+    test_dir: str,
+    img_size: int,
+    seed: int,
+    validation_size: float,
+):
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
-    normalize = transforms.Normalize(mean=mean,std=std)
+    normalize = transforms.Normalize(mean=mean, std=std)
+
     transform_no_augment = transforms.Compose([
-                            transforms.Resize(size=(img_size, img_size)),
-                            transforms.ToTensor(),
-                            normalize
-                        ])
+        transforms.Resize(size=(img_size, img_size)),
+        transforms.ToTensor(),
+        normalize,
+    ])
     
     if augment:
         transform1 = transforms.Compose([
@@ -252,10 +267,10 @@ def get_pets(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_si
         ])
         
         transform2 = transforms.Compose([
-        TrivialAugmentWideNoShape(),
-        transforms.RandomCrop(size=(img_size, img_size)), #includes crop
-        transforms.ToTensor(),
-        normalize
+            TrivialAugmentWideNoShape(),
+            transforms.RandomCrop(size=(img_size, img_size)), #includes crop
+            transforms.ToTensor(),
+            normalize,
         ])
     else:
         transform1 = transform_no_augment    
@@ -263,16 +278,26 @@ def get_pets(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_si
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
 
-def get_partimagenet(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
+
+def get_part_imagenet(
+    augment: bool,
+    train_dir: str,
+    project_dir: str,
+    test_dir: str,
+    img_size: int,
+    seed: int,
+    validation_size: float,
+):
     # Validation size was set to 0.2, such that 80% of the data is used for training
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
-    normalize = transforms.Normalize(mean=mean,std=std)
+    normalize = transforms.Normalize(mean=mean, std=std)
+
     transform_no_augment = transforms.Compose([
-                            transforms.Resize(size=(img_size, img_size)),
-                            transforms.ToTensor(),
-                            normalize
-                        ])
+        transforms.Resize(size=(img_size, img_size)),
+        transforms.ToTensor(),
+        normalize
+    ])
 
     if augment:
         transform1 = transforms.Compose([
@@ -282,28 +307,29 @@ def get_partimagenet(augment:bool, train_dir:str, project_dir: str, test_dir:str
             transforms.RandomResizedCrop(img_size+8, scale=(0.95, 1.))
         ])
         transform2 = transforms.Compose([
-                            TrivialAugmentWideNoShape(),
-                            transforms.RandomCrop(size=(img_size, img_size)), #includes crop
-                            transforms.ToTensor(),
-                            normalize
-                            ])
+            TrivialAugmentWideNoShape(),
+            transforms.RandomCrop(size=(img_size, img_size)),  # includes crop
+            transforms.ToTensor(),
+            normalize
+        ])
     else:
         transform1 = transform_no_augment    
         transform2 = transform_no_augment           
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
 
+
 def get_birds(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None): 
-    shape = (3, img_size, img_size)
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
-    normalize = transforms.Normalize(mean=mean,std=std)
+    normalize = transforms.Normalize(mean=mean, std=std)
+
     transform_no_augment = transforms.Compose([
-                            transforms.Resize(size=(img_size, img_size)),
-                            transforms.ToTensor(),
-                            normalize
-                        ])
-    transform1p = None
+        transforms.Resize(size=(img_size, img_size)),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
     if augment:
         transform1 = transforms.Compose([
             transforms.Resize(size=(img_size+8, img_size+8)), 
@@ -324,13 +350,14 @@ def get_birds(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_
                             normalize
                             ])
     else:
-        transform1 = transform_no_augment    
+        transform1 = transform_no_augment
+        transform1p = None
         transform2 = transform_no_augment           
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size, train_dir_pretrain, test_dir_projection, transform1p)
 
+
 def get_cars(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
-    shape = (3, img_size, img_size)
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
 
@@ -361,6 +388,7 @@ def get_cars(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_s
         transform2 = transform_no_augment           
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
+
 
 def get_grayscale(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float, train_dir_pretrain = None): 
     mean = (0.485, 0.456, 0.406)
@@ -393,6 +421,7 @@ def get_grayscale(augment:bool, train_dir:str, project_dir: str, test_dir:str, i
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
 
+
 class TwoAugSupervisedDataset(torch.utils.data.Dataset):
     r"""Returns two augmentation and no labels."""
     def __init__(self, dataset, transform1, transform2):
@@ -406,7 +435,6 @@ class TwoAugSupervisedDataset(torch.utils.data.Dataset):
             self.imgs = list(zip(dataset._image_files, dataset._labels))
         self.transform1 = transform1
         self.transform2 = transform2
-        
 
     def __getitem__(self, index):
         image, target = self.dataset[index]
@@ -416,7 +444,10 @@ class TwoAugSupervisedDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.dataset)
 
-# function copied from https://pytorch.org/vision/stable/_modules/torchvision/transforms/autoaugment.html#TrivialAugmentWide (v0.12) and adapted
+
+# function copied from:
+# https://pytorch.org/vision/stable/_modules/torchvision/transforms/autoaugment.html#TrivialAugmentWide
+# (v0.12) and adapted
 class TrivialAugmentWideNoColor(transforms.TrivialAugmentWide):
     def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[Tensor, bool]]:
         return {
@@ -427,6 +458,7 @@ class TrivialAugmentWideNoColor(transforms.TrivialAugmentWide):
             "TranslateY": (torch.linspace(0.0, 16.0, num_bins), True), 
             "Rotate": (torch.linspace(0.0, 60.0, num_bins), True), 
         }
+
 
 class TrivialAugmentWideNoShapeWithColor(transforms.TrivialAugmentWide):
     def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[Tensor, bool]]:
@@ -442,6 +474,7 @@ class TrivialAugmentWideNoShapeWithColor(transforms.TrivialAugmentWide):
             "Equalize": (torch.tensor(0.0), False),
         }
 
+
 class TrivialAugmentWideNoShape(transforms.TrivialAugmentWide):
     def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[Tensor, bool]]:
         return {
@@ -455,4 +488,3 @@ class TrivialAugmentWideNoShape(transforms.TrivialAugmentWide):
             "AutoContrast": (torch.tensor(0.0), False),
             "Equalize": (torch.tensor(0.0), False),
         }
-

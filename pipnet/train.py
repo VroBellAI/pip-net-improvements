@@ -417,7 +417,6 @@ def train_epoch(
                 zero_small_weights=True,
                 clip_bias=True,
                 clip_norm_mul=True,
-                print_results=False,
             )
 
     # Save the averaged epoch info;
@@ -475,7 +474,6 @@ def train_loop(
                 zero_small_weights=True,
                 clip_bias=False,
                 clip_norm_mul=False,
-                print_results=True,
             )
 
         # Train network;

@@ -11,9 +11,9 @@ def set_random_seed(seed: int):
     np.random.seed(seed)
 
 
-def get_patch_size(args):
+def get_patch_size(image_size: int, num_prototypes: int):
     patch_size = 32
-    skip = round((args.image_size - patch_size) / (args.wshape-1))
+    skip = round((image_size - patch_size) / (num_prototypes-1))
     return patch_size, skip
 
 
