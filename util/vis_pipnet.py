@@ -204,11 +204,15 @@ def extract_max_hw_idxs(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     assert len(x.shape) == 4, "To extract max HW indices pass tensor of shape (B, C, H, W)!"
 
-    _, h_max_idx = torch.max(x, dim=2)
-    h_max_idx = torch.max(h_max_idx, dim=2).indices
+    B, C, H, W = x.shape
+    x = x.view(B, C, -1)
 
-    _, w_max_idx = torch.max(x, dim=3)
-    w_max_idx = torch.max(w_max_idx, dim=2).indices
+    # Find the index of the maximum value in the flattened tensor;
+    max_idx_flattened = x.argmax(dim=2)
+
+    # Convert back the flattened index;
+    h_max_idx = max_idx_flattened // W
+    w_max_idx = max_idx_flattened % W
 
     return h_max_idx, w_max_idx
 
