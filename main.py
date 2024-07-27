@@ -42,10 +42,24 @@ def run_pipnet(args: Namespace):
     save_args(args, logger.metadata_dir)
 
     # Select device;
-    device, device_ids = get_device(args)
+    device, device_ids = get_device(
+        gpu_ids=args.gpu_ids,
+        disable_cuda=args.disable_cuda,
+    )
 
     # Create data loaders;
-    loaders, classes = get_dataloaders(args, device)
+    loaders, classes = get_dataloaders(
+        dataset=args.dataset,
+        data_dir=args.data_dir,
+        validation_size=args.validation_size,
+        batch_size_train=args.batch_size,
+        batch_size_pretrain=args.batch_size_pretrain,
+        image_size=args.image_size,
+        seed=args.seed,
+        num_workers=args.num_workers,
+        disable_cuda=args.disable_cuda,
+        weighted_loss=args.weighted_loss,
+    )
     num_classes = len(classes)
 
     # Create PIP-Net;

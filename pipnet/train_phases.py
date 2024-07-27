@@ -133,9 +133,9 @@ def train_finetune(
     test_metrics = [
         NumAbstainedPredictions(),
         ANZProto(),
-        ANZSimScores(),
-        LocalSize(),
-        NumNonZeroPrototypes(),
+        ANZSimScores(network=network),
+        LocalSize(network=network),
+        NumNonZeroPrototypes(network=network),
         TopKClassAccuracy(k=1),
         TopKClassAccuracy(k=5),
     ]
@@ -206,9 +206,9 @@ def train_frozen(
     test_metrics = [
         NumAbstainedPredictions(),
         ANZProto(),
-        ANZSimScores(),
-        LocalSize(),
-        NumNonZeroPrototypes(),
+        ANZSimScores(network=network),
+        LocalSize(network=network),
+        NumNonZeroPrototypes(network=network),
         TopKClassAccuracy(k=1),
         TopKClassAccuracy(k=5),
     ]
@@ -277,9 +277,9 @@ def train_full(
     test_metrics = [
         NumAbstainedPredictions(),
         ANZProto(),
-        ANZSimScores(),
-        LocalSize(),
-        NumNonZeroPrototypes(),
+        ANZSimScores(network=network),
+        LocalSize(network=network),
+        NumNonZeroPrototypes(network=network),
         TopKClassAccuracy(k=1),
         TopKClassAccuracy(k=5),
     ]

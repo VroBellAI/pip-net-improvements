@@ -1,99 +1,118 @@
 
 import numpy as np
-import argparse
 import torch
-import torch.optim
-import torch.utils.data
+from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
-from typing import Tuple, Dict
-from torch import Tensor
-import random
 from sklearn.model_selection import train_test_split
+from typing import Tuple, Dict
+
+from util.func import set_random_seed
 
 
-def get_data(args: argparse.Namespace): 
+def get_data(
+    dataset: str,
+    data_dir: str,
+    validation_size: float,
+    image_size: int,
+    seed: int,
+):
     """
     Load the proper dataset based on the parsed arguments
     """
-    torch.manual_seed(args.seed)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    set_random_seed(seed)
 
-    if args.dataset == 'CUB-200-2011':
+    if dataset == 'CUB-200-2011':
         return get_birds(
             True,
-            args.data_dir+'/CUB_200_2011/dataset/train_crop',
-            args.data_dir+'/CUB_200_2011/dataset/train',
-            args.data_dir+'/CUB_200_2011/dataset/test_crop',
-            args.image_size,
-            args.seed,
-            args.validation_size,
-            args.data_dir+'/CUB_200_2011/dataset/train',
-            args.data_dir+'/CUB_200_2011/dataset/test_full',
+            data_dir+'/CUB_200_2011/dataset/train_crop',
+            data_dir+'/CUB_200_2011/dataset/train',
+            data_dir+'/CUB_200_2011/dataset/test_crop',
+            image_size,
+            seed,
+            validation_size,
+            data_dir+'/CUB_200_2011/dataset/train',
+            data_dir+'/CUB_200_2011/dataset/test_full',
         )
 
-    if args.dataset == 'pets':
+    if dataset == 'pets':
         return get_pets(
             augment=True,
-            train_dir=args.data_dir+'/PETS/dataset/train',
-            project_dir=args.data_dir+'/PETS/dataset/train',
-            test_dir=args.data_dir+'/PETS/dataset/test',
-            img_size=args.image_size,
-            seed=args.seed,
-            validation_size=args.validation_size,
+            train_dir=data_dir+'/PETS/dataset/train',
+            project_dir=data_dir+'/PETS/dataset/train',
+            test_dir=data_dir+'/PETS/dataset/test',
+            img_size=image_size,
+            seed=seed,
+            validation_size=validation_size,
         )
 
     # Use --validation_size of 0.2
-    if args.dataset == 'partimagenet':
+    if dataset == 'partimagenet':
         return get_part_imagenet(
             augment=True,
-            train_dir=args.data_dir+'/partimagenet/dataset/all',
-            project_dir=args.data_dir+'/partimagenet/dataset/all',
+            train_dir=data_dir+'/partimagenet/dataset/all',
+            project_dir=data_dir+'/partimagenet/dataset/all',
             test_dir=None,
-            img_size=args.image_size,
-            seed=args.seed,
-            validation_size=args.validation_size,
+            img_size=image_size,
+            seed=seed,
+            validation_size=validation_size,
         )
 
-    if args.dataset == 'CARS':
+    if dataset == 'CARS':
         return get_cars(
             True,
-            args.data_dir+'/cars/dataset/train',
-            args.data_dir+'/cars/dataset/train',
-            args.data_dir+'/cars/dataset/test',
-            args.image_size,
-            args.seed,
-            args.validation_size,
+            data_dir+'/cars/dataset/train',
+            data_dir+'/cars/dataset/train',
+            data_dir+'/cars/dataset/test',
+            image_size,
+            seed,
+            validation_size,
         )
-    if args.dataset == 'grayscale_example':
+    if dataset == 'grayscale_example':
         return get_grayscale(
             True,
-            args.data_dir+'/train',
-            args.data_dir+'/train',
-            args.data_dir+'/test',
-            args.image_size,
-            args.seed,
-            args.validation_size,
+            data_dir+'/train',
+            data_dir+'/train',
+            data_dir+'/test',
+            image_size,
+            seed,
+            validation_size,
         )
-    raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
+    raise Exception(f'Could not load data set, data set "{dataset}" not found!')
 
 
-def get_dataloaders(args: argparse.Namespace, device):
+def get_dataloaders(
+    dataset: str,
+    data_dir: str,
+    validation_size: float,
+    batch_size_train: int,
+    batch_size_pretrain: int,
+    image_size: int,
+    seed: int,
+    num_workers: int,
+    disable_cuda: bool,
+    weighted_loss: bool,
+):
     """
     Get data loaders
     """
     # Obtain the dataset
-    trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, targets = get_data(args)
+    trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, targets = get_data(
+        dataset=dataset,
+        data_dir=data_dir,
+        validation_size=validation_size,
+        image_size=image_size,
+        seed=seed,
+    )
     
     # Determine if GPU should be used
-    cuda = not args.disable_cuda and torch.cuda.is_available()
+    cuda = not disable_cuda and torch.cuda.is_available()
     to_shuffle = True
     sampler = None
     
-    num_workers = args.num_workers
+    num_workers = num_workers
     
-    if args.weighted_loss:
+    if weighted_loss:
         if targets is None:
             raise ValueError("Weighted loss not implemented for this dataset. Targets should be restructured")
         # https://discuss.pytorch.org/t/dataloader-using-subsetrandomsampler-and-weightedrandomsampler-at-the-same-time/29907
@@ -105,83 +124,83 @@ def get_dataloaders(args: argparse.Namespace, device):
         sampler = torch.utils.data.WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
         to_shuffle = False
 
-    pretrain_batchsize = args.batch_size_pretrain 
-    
-    
-    trainloader = torch.utils.data.DataLoader(trainset,
-                                            batch_size=args.batch_size,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
-    if trainset_pretraining is not None:
-        trainloader_pretraining = torch.utils.data.DataLoader(trainset_pretraining,
-                                            batch_size=pretrain_batchsize,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
-                                        
-    else:        
-        trainloader_pretraining = torch.utils.data.DataLoader(trainset,
-                                            batch_size=pretrain_batchsize,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
+    trainloader = DataLoader(
+        dataset=trainset,
+        batch_size=batch_size_train,
+        shuffle=to_shuffle,
+        sampler=sampler,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=True,
+    )
 
-    trainloader_normal = torch.utils.data.DataLoader(trainset_normal,
-                                            batch_size=args.batch_size,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
-    trainloader_normal_augment = torch.utils.data.DataLoader(trainset_normal_augment,
-                                            batch_size=args.batch_size,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
-    
-    projectloader = torch.utils.data.DataLoader(projectset,
-                                              batch_size=args.batch_size,
-                                              shuffle=False,
-                                              pin_memory=cuda,
-                                              num_workers=num_workers,
-                                              worker_init_fn=np.random.seed(args.seed),
-                                              drop_last=False
-                                              )
-    testloader = torch.utils.data.DataLoader(testset,
-                                             batch_size=args.batch_size,
-                                             shuffle=True, 
-                                             pin_memory=cuda,
-                                             num_workers=num_workers,
-                                             worker_init_fn=np.random.seed(args.seed),
-                                             drop_last=False
-                                             )
-    test_projectloader = torch.utils.data.DataLoader(testset_projection,
-                                             batch_size=args.batch_size,
-                                             shuffle=False,
-                                             pin_memory=cuda,
-                                             num_workers=num_workers,
-                                             worker_init_fn=np.random.seed(args.seed),
-                                             drop_last=False
-                                             )
+    if trainset_pretraining is None:
+        trainset_pretraining = trainset
+
+    trainloader_pretraining = DataLoader(
+        dataset=trainset_pretraining,
+        batch_size=batch_size_pretrain,
+        shuffle=to_shuffle,
+        sampler=sampler,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=True,
+    )
+
+    trainloader_normal = DataLoader(
+        dataset=trainset_normal,
+        batch_size=batch_size_train,
+        shuffle=to_shuffle,
+        sampler=sampler,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=True,
+    )
+
+    trainloader_normal_augment = DataLoader(
+        dataset=trainset_normal_augment,
+        batch_size=batch_size_train,
+        shuffle=to_shuffle,
+        sampler=sampler,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=True,
+    )
+
+    projectloader = DataLoader(
+        dataset=projectset,
+        batch_size=batch_size_train,
+        shuffle=False,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=False
+    )
+
+    testloader = DataLoader(
+        dataset=testset,
+        batch_size=batch_size_train,
+        shuffle=True,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=False,
+    )
+
+    test_projectloader = DataLoader(
+        dataset=testset_projection,
+        batch_size=batch_size_train,
+        shuffle=False,
+        pin_memory=cuda,
+        num_workers=num_workers,
+        worker_init_fn=np.random.seed(seed),
+        drop_last=False,
+    )
+
     print("Num classes (k) = ", len(classes), classes[:5], "etc.", flush=True)
     loaders = {
         "train": trainloader,
@@ -449,7 +468,7 @@ class TwoAugSupervisedDataset(torch.utils.data.Dataset):
 # https://pytorch.org/vision/stable/_modules/torchvision/transforms/autoaugment.html#TrivialAugmentWide
 # (v0.12) and adapted
 class TrivialAugmentWideNoColor(transforms.TrivialAugmentWide):
-    def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[Tensor, bool]]:
+    def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[torch.Tensor, bool]]:
         return {
             "Identity": (torch.tensor(0.0), False),
             "ShearX": (torch.linspace(0.0, 0.5, num_bins), True), 
@@ -461,7 +480,7 @@ class TrivialAugmentWideNoColor(transforms.TrivialAugmentWide):
 
 
 class TrivialAugmentWideNoShapeWithColor(transforms.TrivialAugmentWide):
-    def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[Tensor, bool]]:
+    def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[torch.Tensor, bool]]:
         return {
             "Identity": (torch.tensor(0.0), False),
             "Brightness": (torch.linspace(0.0, 0.5, num_bins), True),
@@ -476,7 +495,7 @@ class TrivialAugmentWideNoShapeWithColor(transforms.TrivialAugmentWide):
 
 
 class TrivialAugmentWideNoShape(transforms.TrivialAugmentWide):
-    def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[Tensor, bool]]:
+    def _augmentation_space(self, num_bins: int) -> Dict[str, Tuple[torch.Tensor, bool]]:
         return {
             
             "Identity": (torch.tensor(0.0), False),

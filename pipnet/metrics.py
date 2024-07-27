@@ -8,7 +8,7 @@ class Metric(torch.nn.Module):
     def __init__(self, name: str, aggregation: str = "mean"):
         super().__init__()
         self.name = name
-        self.summed_val = 0.0
+        self.aggregated_val = 0.0
         self.num_steps = 0
         self.aggregation = aggregation
 
@@ -23,15 +23,18 @@ class Metric(torch.nn.Module):
 
     def get_aggregated_value(self) -> float:
         if self.aggregation == "mean":
-            return self.summed_val / self.num_steps
+            return self.aggregated_val / self.num_steps
 
         if self.aggregation == "sum":
-            return self.summed_val
+            return self.aggregated_val
+
+        if self.aggregation == "last":
+            return self.aggregated_val
 
         raise Exception(f"Aggregation {self.aggregation} not implemented!")
 
     def reset(self):
-        self.summed_val = 0.0
+        self.aggregated_val = 0.0
         self.num_steps = 0
 
 
@@ -56,7 +59,7 @@ class ClassAccuracy(Metric):
         result = correct / float(len(targets))
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
+        self.aggregated_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -87,7 +90,7 @@ class NumRelevantScores(Metric):
         result = num_relevant_scores.float().mean()
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
+        self.aggregated_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -118,7 +121,7 @@ class NumAbstainedPredictions(Metric):
         result = (batch_size - num_relevant_predictions).float()
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
+        self.aggregated_val += result.detach().item()
         self.num_steps += 1
 
         return result
@@ -140,13 +143,16 @@ class ANZProto(Metric):
         targets: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        # Extract batch_size for denominator;
+        batch_size = targets.shape[0]
+
         # Calculate Almost Non-Zero activations;
         proto_vec = model_output.proto_feature_vec
         result = (torch.abs(proto_vec) > self.threshold).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
-        self.num_steps += 1
+        self.aggregated_val += result.detach().item()
+        self.num_steps += batch_size
 
         return result
 
@@ -157,26 +163,28 @@ class ANZSimScores(Metric):
     for similarity scores between
     prototype feature vectors and predicted class representative vectors.
     """
-    def __init__(self, threshold: float = 1e-3, name: str = "ANZSimScores", aggregation: str = "mean"):
+    def __init__(self, network: PIPNet, threshold: float = 1e-3, name: str = "ANZSimScores", aggregation: str = "mean"):
         super().__init__(name=name, aggregation=aggregation)
         self.threshold = threshold
+        self.class_w = network.module.get_class_weight()
 
     @torch.no_grad()
     def forward(
         self,
         model_output: PIPNetOutput,
         targets: torch.Tensor,
-        network: PIPNet,
         **kwargs,
     ) -> torch.Tensor:
+        # Extract batch_size for denominator;
+        batch_size = targets.shape[0]
+
         # Extract model output;
         proto_vec = model_output.proto_feature_vec
         logits = model_output.logits
         _, pred_classes = torch.max(logits, dim=1)
 
         # Extract weight vectors of predicted classes;
-        class_w = network.module.get_class_weight()
-        pred_class_vec = torch.index_select(class_w, dim=0, index=pred_classes)
+        pred_class_vec = torch.index_select(self.class_w, dim=0, index=pred_classes)
 
         # Calculate Almost Non-Zero similarities
         # Between proto-vectors and corresponding class vectors;
@@ -184,16 +192,17 @@ class ANZSimScores(Metric):
         result = (torch.abs(sim_scores) > self.threshold).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
-        self.num_steps += 1
+        self.aggregated_val += result.detach().item()
+        self.num_steps += batch_size
 
         return result
 
 
 class LocalSize(Metric):
-    def __init__(self, threshold: float = 1e-3, name: str = "LocalSize", aggregation: str = "mean"):
+    def __init__(self, network: PIPNet, threshold: float = 1e-3, name: str = "LocalSize", aggregation: str = "mean"):
         super().__init__(name=name, aggregation=aggregation)
         self.threshold = threshold
+        self.class_w = network.module.get_class_weight()
 
     @torch.no_grad()
     def forward(
@@ -203,22 +212,22 @@ class LocalSize(Metric):
         network: PIPNet,
         **kwargs,
     ) -> torch.Tensor:
+        # Extract batch_size for denominator;
+        batch_size = targets.shape[0]
+
         # Extract model output;
         proto_vec = model_output.proto_feature_vec
 
-        batch_size = proto_vec.shape[0]
-
         # Extract classification weight matrix;
-        class_w = network.module.get_class_weight()
-        class_w_repeat = class_w.unsqueeze(1).repeat(1, batch_size, 1)
+        class_w_repeat = self.class_w.unsqueeze(1).repeat(1, batch_size, 1)
 
         sim_scores = proto_vec * class_w_repeat
         sim_scores_thr = torch.relu(sim_scores - self.threshold).sum(dim=1)
         result = (sim_scores_thr > 0.0).sum()
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
-        self.num_steps += 1
+        self.aggregated_val += result.detach().item()
+        self.num_steps += batch_size
 
         return result
 
@@ -228,24 +237,22 @@ class NumNonZeroPrototypes(Metric):
     Calculates number of prototypes
     with any non-zero weight in class matrix.
     """
-    def __init__(self, threshold: float = 1e-3, name: str = "NumNonZeroPrototypes", aggregation: str = "mean"):
-        super().__init__(name=name, aggregation=aggregation)
+    def __init__(
+        self,
+        network: PIPNet,
+        threshold: float = 1e-3,
+        name: str = "NumNonZeroPrototypes",
+    ):
+        super().__init__(name=name, aggregation="last")
         self.threshold = threshold
+        self.class_w = network.module.get_class_weight()
 
     @torch.no_grad()
-    def forward(
-        self,
-        model_output: PIPNetOutput,
-        targets: torch.Tensor,
-        network: PIPNet,
-        **kwargs,
-    ) -> torch.Tensor:
-        class_w = network.module.get_class_weight()
-        result = (class_w > self.threshold).any(dim=0).sum()
+    def forward(self, **kwargs) -> torch.Tensor:
+        result = (self.class_w > self.threshold).any(dim=0).sum()
 
-        # Aggregate result;
-        self.summed_val += result.detach().item()
-        self.num_steps += 1
+        # Save last result as aggregated value;
+        self.aggregated_val = result.detach().item()
 
         return result
 
@@ -264,6 +271,9 @@ class TopKClassAccuracy(Metric):
         targets: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        # Extract batch_size for denominator;
+        batch_size = targets.shape[0]
+
         # Extract classification scores;
         logits = model_output.logits
 
@@ -277,12 +287,12 @@ class TopKClassAccuracy(Metric):
         # Compare with targets;
         correct_predictions = torch.eq(top_k_indices, targets).sum(dim=1)
 
-        # Aggregate comparison
-        result = correct_predictions.float().mean()
+        # Aggregate comparison;
+        result = correct_predictions.float().sum()
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
-        self.num_steps += 1
+        self.aggregated_val += result.detach().item()
+        self.num_steps += batch_size
 
         return result
 
@@ -321,7 +331,7 @@ class NumInDistribution(Metric):
             raise ValueError("provided threshold should be float or dict", type(self.threshold))
 
         # Aggregate result;
-        self.summed_val += result.detach().item()
+        self.aggregated_val += result.detach().item()
         self.num_steps += 1
 
         return result
