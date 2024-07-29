@@ -70,7 +70,12 @@ class NumRelevantScores(Metric):
     Calculates number of activation scores
     greater that the given score thresh.
     """
-    def __init__(self, thresh: float = 0.1, name: str = "NumRelevantScores", aggregation: str = "mean"):
+    def __init__(
+        self,
+        thresh: float = 0.1,
+        name: str = "NumRelevantScores",
+        aggregation: str = "mean",
+    ):
         super().__init__(name=name, aggregation=aggregation)
         self.thresh = thresh
 
@@ -132,7 +137,12 @@ class ANZProto(Metric):
     Calculates Almost Non-Zero sparsity estimate
     for prototype vector.
     """
-    def __init__(self, threshold: float = 1e-3, name: str = "ANZProto", aggregation: str = "mean"):
+    def __init__(
+        self,
+        threshold: float = 1e-3,
+        name: str = "ANZProto",
+        aggregation: str = "mean",
+    ):
         super().__init__(name=name, aggregation=aggregation)
         self.threshold = threshold
 
@@ -154,7 +164,7 @@ class ANZProto(Metric):
         self.aggregated_val += result.detach().item()
         self.num_steps += batch_size
 
-        return result
+        return result / batch_size
 
 
 class ANZSimScores(Metric):
@@ -163,7 +173,13 @@ class ANZSimScores(Metric):
     for similarity scores between
     prototype feature vectors and predicted class representative vectors.
     """
-    def __init__(self, network: PIPNet, threshold: float = 1e-3, name: str = "ANZSimScores", aggregation: str = "mean"):
+    def __init__(
+        self,
+        network: PIPNet,
+        threshold: float = 1e-3,
+        name: str = "ANZSimScores",
+        aggregation: str = "mean",
+    ):
         super().__init__(name=name, aggregation=aggregation)
         self.threshold = threshold
         self.class_w = network.module.get_class_weight()
@@ -195,11 +211,17 @@ class ANZSimScores(Metric):
         self.aggregated_val += result.detach().item()
         self.num_steps += batch_size
 
-        return result
+        return result / batch_size
 
 
 class LocalSize(Metric):
-    def __init__(self, network: PIPNet, threshold: float = 1e-3, name: str = "LocalSize", aggregation: str = "mean"):
+    def __init__(
+        self,
+        network: PIPNet,
+        threshold: float = 1e-3,
+        name: str = "LocalSize",
+        aggregation: str = "mean",
+    ):
         super().__init__(name=name, aggregation=aggregation)
         self.threshold = threshold
         self.class_w = network.module.get_class_weight()
@@ -229,7 +251,7 @@ class LocalSize(Metric):
         self.aggregated_val += result.detach().item()
         self.num_steps += batch_size
 
-        return result
+        return result / batch_size
 
 
 class NumNonZeroPrototypes(Metric):
@@ -294,14 +316,19 @@ class TopKClassAccuracy(Metric):
         self.aggregated_val += result.detach().item()
         self.num_steps += batch_size
 
-        return result
+        return result / batch_size
 
 
 class NumInDistribution(Metric):
     """
     Calculates # In-Distribution Samples.
     """
-    def __init__(self, threshold: Union[float, Dict], name: str = "InDistrSamples", aggregation: str = "sum"):
+    def __init__(
+        self,
+        threshold: Union[float, Dict],
+        name: str = "InDistrSamples",
+        aggregation: str = "sum",
+    ):
         super().__init__(name=name, aggregation=aggregation)
         self.threshold = threshold
 

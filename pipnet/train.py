@@ -200,7 +200,7 @@ def train_step_fp(
     scaler: Optional[GradScaler],
     optimizers: Dict[str, Optimizer],
     device: torch.device,
-) -> Dict[str, torch.Tensor]:
+) -> Dict[str, float]:
     """
     Performs train step with Full Precision.
     """
@@ -227,7 +227,12 @@ def train_step_fp(
     for opt in optimizers.values():
         opt.step()
 
-    return step_data
+    step_info = {
+        name: val.detach.item()
+        for name, val in step_data.items()
+    }
+
+    return step_info
 
 
 def train_step_amp(
@@ -241,7 +246,7 @@ def train_step_amp(
     scaler: GradScaler,
     optimizers: Dict[str, Optimizer],
     device: torch.device,
-) -> Dict[str, torch.Tensor]:
+) -> Dict[str, float]:
     """
     Performs train step with Automatic Mixed Precision.
     """
@@ -271,7 +276,13 @@ def train_step_amp(
 
     # Update gradient scaler;
     scaler.update()
-    return step_data
+
+    step_info = {
+        name: val.detach.item()
+        for name, val in step_data.items()
+    }
+
+    return step_info
 
 
 def select_train_step(
@@ -332,6 +343,7 @@ def train_epoch(
     device: torch.device,
     aug_mode: str,
     use_mixed_precision: bool,
+    logger: Logger,
 ) -> Dict[str, float]:
     """
     Performs single train epoch.
@@ -374,13 +386,13 @@ def train_epoch(
         ncols=0,
     )
 
-    # Store learning rates values;
-    lr_hist = {lr_name: [] for lr_name in schedulers}
+    # Check if classifier is training;
+    is_class_training = network.module.get_class_weight().requires_grad
 
     # Train epoch loop;
     for step_idx, (x1, x2, y) in train_iter:
         x1, x2, y = x1.to(device), x2.to(device), y.to(device)
-        step_data = train_step_func(
+        step_info = train_step_func(
             forward_pass_func=forward_pass_func,
             network=network,
             x1=x1,
@@ -395,29 +407,34 @@ def train_epoch(
 
         # Set and save learning rates;
         for lr_sch_name, lr_sch in schedulers.items():
-
+            step_val = None
             if isinstance(lr_sch, CosineAnnealingWarmRestarts):
                 step_val = epoch_idx - 1 + (step_idx / num_steps)
-            else:
-                step_val = None
 
             lr_sch.step(step_val)
-            lr_hist[lr_sch_name].append(lr_sch.get_last_lr()[0])
+            step_info[lr_sch_name] = lr_sch.get_last_lr()[0]
 
-        # Print loss data;
+        # Print metrics data;
         train_iter.set_postfix_str(
-            s=metric_data_to_str(step_data),
+            s=metric_data_to_str(step_info),
             refresh=False,
         )
 
         # Clip classification parameters;
-        # TODO: clip by "requires grad..."
-        if phase != "pretrain":
+        if is_class_training:
             network.module.clip_class_params(
                 zero_small_weights=True,
                 clip_bias=True,
                 clip_norm_mul=True,
             )
+
+        # Log step info;
+        step_info = {
+            "step_idx": epoch_idx - 1 + step_idx,
+            "epoch_idx": epoch_idx,
+            "phase": phase,
+        } | step_info
+        logger.log_step_info(step_info)
 
     # Save the averaged epoch info;
     epoch_info = {
@@ -428,10 +445,6 @@ def train_epoch(
 
     for metric in metrics:
         epoch_info[metric.name] = metric.get_aggregated_value()
-
-    # TODO: bring back visualization;
-    # for lr_name, lr_vec in lr_hist.items():
-    #     epoch_info[f"LR_{lr_name}"] = lr_vec
 
     return epoch_info
 
@@ -455,6 +468,8 @@ def train_loop(
     save_period: int = 30,
 ):
 
+    class_w = network.module.get_class_weight()
+
     for epoch in range(init_epoch, num_epochs+init_epoch):
         # Track epochs with loss function;
         loss_fn.set_curr_epoch(epoch)
@@ -464,12 +479,12 @@ def train_loop(
         is_last_epoch = epoch == num_epochs
 
         # Set small class weights to zero;
-        # TODO: clip by gradients req!
         if all([
             (is_last_epoch or is_save_epoch),
             num_epochs > 1,
-            phase != "pretrain",
+            class_w.requires_grad,
         ]):
+            print("Zeroing-out small classification weights.", flush=True)
             network.module.clip_class_params(
                 zero_small_weights=True,
                 clip_bias=False,
@@ -490,6 +505,7 @@ def train_loop(
             aug_mode=aug_mode,
             use_mixed_precision=use_mixed_precision,
             phase=phase,
+            logger=logger,
         )
 
         # Evaluate model;

@@ -192,7 +192,6 @@ class PIPNet(nn.Module):
     ):
         # Set small weights to zero;
         if zero_small_weights:
-            print("Zeroing-out small classification head weights", flush=True)
             class_w = self.get_class_weight()
             class_w_nonzero = torch.clamp(class_w.data - 1e-3, min=0.0)
             self.set_class_weight(class_w_nonzero)
@@ -200,15 +199,13 @@ class PIPNet(nn.Module):
         # Clip bias values to non-negative;
         class_b = self.get_class_bias()
         if clip_bias and class_b is not None:
-            print("Clipping-out negative classification bias values", flush=True)
             class_b_nonzero = torch.clamp(class_b.data, min=0.0)
             self.set_class_bias(class_b_nonzero)
 
         # Clip normalization multiplier;
         if clip_norm_mul:
             norm_mul = self.get_norm_mul()
-            print("Clipping-out negative normalization multiplier", flush=True)
-            norm_mul_clipped = torch.clamp(norm_mul.data, min=0.0)
+            norm_mul_clipped = torch.clamp(norm_mul.data, min=1.0)
             self.set_norm_mul(norm_mul_clipped)
 
     @torch.no_grad()

@@ -44,15 +44,8 @@ def pretrain(
     # Manage gradients;
     connect_gradients(network.module.params_to_train)
     connect_gradients(network.module.params_addon)
-
-    # Can be set to disconnect when you want to freeze more layers;
     connect_gradients(network.module.params_to_freeze)
-
-    # Can be set to connect when you want to train whole backbone
-    # (e.g. if dataset is very different from ImageNet);
     disconnect_gradients(network.module.params_backbone)
-
-    # Disable training of classification layer;
     disconnect_gradients(network.module.params_classifier)
 
     # Numerical stability constant;
