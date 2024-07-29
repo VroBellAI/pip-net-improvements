@@ -412,7 +412,7 @@ def train_epoch(
                 step_val = epoch_idx - 1 + (step_idx / num_steps)
 
             lr_sch.step(step_val)
-            step_info[lr_sch_name] = lr_sch.get_last_lr()[0]
+            step_info[f"LR_{lr_sch_name}"] = lr_sch.get_last_lr()[0]
 
         # Print metrics data;
         train_iter.set_postfix_str(
@@ -476,11 +476,10 @@ def train_loop(
 
         # Track selected epochs;
         is_save_epoch = epoch % save_period == 0
-        is_last_epoch = epoch == num_epochs
 
         # Set small class weights to zero;
         if all([
-            (is_last_epoch or is_save_epoch),
+            is_save_epoch,
             num_epochs > 1,
             class_w.requires_grad,
         ]):
