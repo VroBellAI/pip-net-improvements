@@ -36,14 +36,16 @@ def test_step(
     # Predict inputs;
     model_output = network(inputs, inference=True)
 
+    # Compute metrics;
     metrics_data = {
         metric.name: metric(
             model_output=model_output,
             targets=targets,
             network=network,
-        )
+        ).detach().item()
         for metric in metrics
     }
+
     return metrics_data
 
 
