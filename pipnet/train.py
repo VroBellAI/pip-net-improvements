@@ -278,7 +278,7 @@ def train_step_amp(
     scaler.update()
 
     step_info = {
-        name: val.detach.item()
+        name: val.detach().item()
         for name, val in step_data.items()
     }
 
