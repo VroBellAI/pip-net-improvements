@@ -228,7 +228,7 @@ def train_step_fp(
         opt.step()
 
     step_info = {
-        name: val.detach.item()
+        name: val.detach().item()
         for name, val in step_data.items()
     }
 
