@@ -48,15 +48,17 @@ def pretrain(
     disconnect_gradients(network.module.params_backbone)
     disconnect_gradients(network.module.params_classifier)
 
-    # Numerical stability constant;
-    eps = 1e-7 if use_mixed_precision else 1e-10
+    # Numerical stability constant
+    # (original repo uses two...);
+    eps_t = 1e-7 if use_mixed_precision else 1e-8
+    eps_a = 1e-7 if use_mixed_precision else 1e-12
 
     # Define losses;
     partial_losses = [
-        TanhLoss(weight=5.0, device=device, eps=eps),
+        TanhLoss(weight=5.0, device=device, eps=eps_t),
         # Set alignment weight to None
         # to dynamically modify it during training.
-        get_align_loss(aug_mode)(weight=None, device=device, eps=eps),
+        get_align_loss(aug_mode)(weight=None, device=device, eps=eps_a),
     ]
     loss_fn = WeightedSumLoss(
         partial_losses=partial_losses,
@@ -176,14 +178,16 @@ def train_frozen(
     disconnect_gradients(network.module.params_backbone)
     connect_gradients(network.module.params_classifier)
 
-    # Numerical stability constant;
-    eps = 1e-7 if use_mixed_precision else 1e-10
+    # Numerical stability constant
+    # (original repo uses two...);
+    eps_t = 1e-7 if use_mixed_precision else 1e-8
+    eps_a = 1e-7 if use_mixed_precision else 1e-12
 
     # Define losses;
     partial_losses = [
         ClassLoss(weight=2.0, device=device),
-        TanhLoss(weight=2.0, device=device, eps=eps),
-        get_align_loss(aug_mode)(weight=5.0, device=device, eps=eps),
+        TanhLoss(weight=2.0, device=device, eps=eps_t),
+        get_align_loss(aug_mode)(weight=5.0, device=device, eps=eps_a),
     ]
     loss_fn = WeightedSumLoss(
         partial_losses=partial_losses,
@@ -247,14 +251,16 @@ def train_full(
     connect_gradients(network.module.params_backbone)
     connect_gradients(network.module.params_classifier)
 
-    # Numerical stability constant;
-    eps = 1e-7 if use_mixed_precision else 1e-10
+    # Numerical stability constant
+    # (original repo uses two...);
+    eps_t = 1e-7 if use_mixed_precision else 1e-8
+    eps_a = 1e-7 if use_mixed_precision else 1e-12
 
     # Define losses;
     partial_losses = [
         ClassLoss(weight=2.0, device=device),
-        TanhLoss(weight=2.0, device=device, eps=eps),
-        get_align_loss(aug_mode)(weight=5.0, device=device, eps=eps),
+        TanhLoss(weight=2.0, device=device, eps=eps_t),
+        get_align_loss(aug_mode)(weight=5.0, device=device, eps=eps_a),
     ]
     loss_fn = WeightedSumLoss(
         partial_losses=partial_losses,
