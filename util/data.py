@@ -102,7 +102,7 @@ def get_data(
             train_dir_pretrain=None,
             test_dir_projection=None,
             online_confound=None,
-            split_masks_dir=split_masks_dir,
+            split_masks_dir=data_dir+'/train_part_map',
         )
 
 
