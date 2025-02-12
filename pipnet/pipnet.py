@@ -21,12 +21,14 @@ from typing import List, Dict, Set, Optional
 class PIPNetOutput:
     def __init__(
         self,
+        feature_map: torch.Tensor,
         proto_feature_map: torch.Tensor,
         proto_feature_vec: torch.Tensor,
         logits: torch.Tensor,
         pre_softmax: torch.Tensor,
         softmax_out: torch.Tensor,
     ):
+        self.feature_map = feature_map
         self.proto_feature_map = proto_feature_map
         self.proto_feature_vec = proto_feature_vec
         self.logits = logits
@@ -92,6 +94,7 @@ class PIPNet(nn.Module):
         softmax_out = F.softmax(pre_softmax, dim=1)
 
         result = PIPNetOutput(
+            feature_map=features,
             proto_feature_map=proto_features,
             proto_feature_vec=pooled,
             logits=logits,
